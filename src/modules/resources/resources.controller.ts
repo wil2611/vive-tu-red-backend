@@ -34,7 +34,7 @@ export class ResourcesController {
 
   @Get(':id')
   async findOne(@Param('id') id: string) {
-    return this.resourcesService.findById(id);
+    return this.resourcesService.findPublishedById(id);
   }
 
   @Patch(':id/download')

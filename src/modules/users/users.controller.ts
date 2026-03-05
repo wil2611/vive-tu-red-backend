@@ -12,6 +12,7 @@ import {
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -37,7 +38,7 @@ export class UsersController {
   @Get(':id')
   @Roles(UserRole.ADMIN)
   async findOne(@Param('id') id: string) {
-    return this.usersService.findById(id);
+    return this.usersService.findSafeById(id);
   }
 
   @Put(':id')
@@ -56,8 +57,8 @@ export class UsersController {
   @Roles(UserRole.ADMIN)
   async resetPassword(
     @Param('id') id: string,
-    @Body('password') password: string,
+    @Body() resetPasswordDto: ResetPasswordDto,
   ) {
-    return this.usersService.resetPassword(id, password);
+    return this.usersService.resetPassword(id, resetPasswordDto.password);
   }
 }

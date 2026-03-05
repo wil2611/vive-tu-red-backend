@@ -22,7 +22,7 @@ async function bootstrap() {
   // Prefijo global de API
   app.setGlobalPrefix('api');
 
-  // Validación global de DTOs
+  // Validacion global de DTOs
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -31,8 +31,9 @@ async function bootstrap() {
     }),
   );
 
-  const port = configService.get<number>('PORT', 3000);
-  await app.listen(port);
-  console.log(`🚀 Servidor corriendo en http://localhost:${port}/api`);
+  const port = parseInt(configService.get<string>('PORT', '3000'), 10);
+  const safePort = Number.isNaN(port) ? 3000 : port;
+  await app.listen(safePort);
+  console.log(`Servidor corriendo en http://localhost:${safePort}/api`);
 }
-bootstrap();
+void bootstrap();

@@ -34,7 +34,7 @@ export class SupportController {
 
   @Get(':id')
   async findOne(@Param('id') id: string) {
-    return this.supportService.findById(id);
+    return this.supportService.findActiveById(id);
   }
 
   // ── Endpoints protegidos ─────────────────────────────

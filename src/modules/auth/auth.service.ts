@@ -37,10 +37,7 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
-    await this.usersService.updateRefreshToken(
-      user.id,
-      tokens.refreshToken,
-    );
+    await this.usersService.updateRefreshToken(user.id, tokens.refreshToken);
 
     return {
       user: {
@@ -56,7 +53,7 @@ export class AuthService {
 
   async refreshTokens(refreshToken: string) {
     try {
-      const payload = this.jwtService.verify(refreshToken, {
+      const payload = this.jwtService.verify<JwtPayload>(refreshToken, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
       });
 
@@ -73,15 +70,8 @@ export class AuthService {
         throw new ForbiddenException('Acceso denegado');
       }
 
-      const tokens = await this.generateTokens(
-        user.id,
-        user.email,
-        user.role,
-      );
-      await this.usersService.updateRefreshToken(
-        user.id,
-        tokens.refreshToken,
-      );
+      const tokens = await this.generateTokens(user.id, user.email, user.role);
+      await this.usersService.updateRefreshToken(user.id, tokens.refreshToken);
 
       return tokens;
     } catch {
@@ -94,24 +84,29 @@ export class AuthService {
     return { message: 'Sesión cerrada exitosamente' };
   }
 
-  private async generateTokens(
-    userId: string,
-    email: string,
-    role: string,
-  ) {
+  private async generateTokens(userId: string, email: string, role: string) {
     const payload: JwtPayload = { sub: userId, email, role };
+    const accessTokenExpiration = parseInt(
+      this.configService.get<string>('JWT_EXPIRATION', '3600'),
+      10,
+    );
+    const refreshTokenExpiration = parseInt(
+      this.configService.get<string>('JWT_REFRESH_EXPIRATION', '604800'),
+      10,
+    );
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>('JWT_SECRET'),
-        expiresIn: this.configService.get<number>('JWT_EXPIRATION', 3600),
+        expiresIn: Number.isNaN(accessTokenExpiration)
+          ? 3600
+          : accessTokenExpiration,
       }),
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-        expiresIn: this.configService.get<number>(
-          'JWT_REFRESH_EXPIRATION',
-          604800,
-        ),
+        expiresIn: Number.isNaN(refreshTokenExpiration)
+          ? 604800
+          : refreshTokenExpiration,
       }),
     ]);
 

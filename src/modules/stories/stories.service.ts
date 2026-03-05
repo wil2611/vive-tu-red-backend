@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Story } from './entities/story.entity';
 import { StoryChapter } from './entities/story-chapter.entity';
-import { StoryAsset } from './entities/story-asset.entity';
 import { CreateStoryDto } from './dto/create-story.dto';
 import { UpdateStoryDto } from './dto/update-story.dto';
 import { CreateChapterDto } from './dto/create-chapter.dto';
@@ -16,11 +15,7 @@ export class StoriesService {
     private readonly storyRepository: Repository<Story>,
     @InjectRepository(StoryChapter)
     private readonly chapterRepository: Repository<StoryChapter>,
-    @InjectRepository(StoryAsset)
-    private readonly assetRepository: Repository<StoryAsset>,
   ) {}
-
-  // ── Stories ──────────────────────────────────────────
 
   async createStory(createStoryDto: CreateStoryDto): Promise<Story> {
     const story = this.storyRepository.create(createStoryDto);
@@ -35,11 +30,20 @@ export class StoriesService {
   }
 
   async findPublishedStories(): Promise<Story[]> {
-    return this.storyRepository.find({
-      where: { isPublished: true },
-      order: { order: 'ASC' },
-      relations: ['chapters'],
-    });
+    return this.storyRepository
+      .createQueryBuilder('story')
+      .leftJoinAndSelect(
+        'story.chapters',
+        'chapter',
+        'chapter.isPublished = :isChapterPublished',
+        { isChapterPublished: true },
+      )
+      .where('story.isPublished = :isStoryPublished', {
+        isStoryPublished: true,
+      })
+      .orderBy('story.order', 'ASC')
+      .addOrderBy('chapter.order', 'ASC')
+      .getMany();
   }
 
   async findStoryById(id: string): Promise<Story> {
@@ -50,6 +54,32 @@ export class StoriesService {
     if (!story) {
       throw new NotFoundException('Historia no encontrada');
     }
+    return story;
+  }
+
+  async findPublishedStoryById(id: string): Promise<Story> {
+    const story = await this.storyRepository
+      .createQueryBuilder('story')
+      .leftJoinAndSelect(
+        'story.chapters',
+        'chapter',
+        'chapter.isPublished = :isChapterPublished',
+        { isChapterPublished: true },
+      )
+      .leftJoinAndSelect('chapter.assets', 'asset')
+      .where('story.id = :id', { id })
+      .andWhere('story.isPublished = :isStoryPublished', {
+        isStoryPublished: true,
+      })
+      .orderBy('story.order', 'ASC')
+      .addOrderBy('chapter.order', 'ASC')
+      .addOrderBy('asset.order', 'ASC')
+      .getOne();
+
+    if (!story) {
+      throw new NotFoundException('Historia no encontrada');
+    }
+
     return story;
   }
 
@@ -68,10 +98,9 @@ export class StoriesService {
     return { message: 'Historia eliminada exitosamente' };
   }
 
-  // ── Chapters ─────────────────────────────────────────
-
-  async createChapter(createChapterDto: CreateChapterDto): Promise<StoryChapter> {
-    // Verificar que la historia existe
+  async createChapter(
+    createChapterDto: CreateChapterDto,
+  ): Promise<StoryChapter> {
     await this.findStoryById(createChapterDto.storyId);
     const chapter = this.chapterRepository.create(createChapterDto);
     return this.chapterRepository.save(chapter);
@@ -83,14 +112,45 @@ export class StoriesService {
       relations: ['assets'],
     });
     if (!chapter) {
-      throw new NotFoundException('Capítulo no encontrado');
+      throw new NotFoundException('Capitulo no encontrado');
     }
+    return chapter;
+  }
+
+  async findPublishedChapterById(id: string): Promise<StoryChapter> {
+    const chapter = await this.chapterRepository
+      .createQueryBuilder('chapter')
+      .leftJoinAndSelect('chapter.assets', 'asset')
+      .leftJoin('chapter.story', 'story')
+      .where('chapter.id = :id', { id })
+      .andWhere('chapter.isPublished = :isChapterPublished', {
+        isChapterPublished: true,
+      })
+      .andWhere('story.isPublished = :isStoryPublished', {
+        isStoryPublished: true,
+      })
+      .orderBy('asset.order', 'ASC')
+      .getOne();
+
+    if (!chapter) {
+      throw new NotFoundException('Capitulo no encontrado');
+    }
+
     return chapter;
   }
 
   async findChaptersByStory(storyId: string): Promise<StoryChapter[]> {
     return this.chapterRepository.find({
       where: { storyId },
+      order: { order: 'ASC' },
+      relations: ['assets'],
+    });
+  }
+
+  async findPublishedChaptersByStory(storyId: string): Promise<StoryChapter[]> {
+    await this.findPublishedStoryById(storyId);
+    return this.chapterRepository.find({
+      where: { storyId, isPublished: true },
       order: { order: 'ASC' },
       relations: ['assets'],
     });
@@ -108,6 +168,6 @@ export class StoriesService {
   async removeChapter(id: string): Promise<{ message: string }> {
     const chapter = await this.findChapterById(id);
     await this.chapterRepository.remove(chapter);
-    return { message: 'Capítulo eliminado exitosamente' };
+    return { message: 'Capitulo eliminado exitosamente' };
   }
 }

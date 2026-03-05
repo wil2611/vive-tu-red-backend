@@ -38,6 +38,16 @@ export class ResourcesService {
     return resource;
   }
 
+  async findPublishedById(id: string): Promise<Resource> {
+    const resource = await this.resourceRepository.findOne({
+      where: { id, isPublished: true },
+    });
+    if (!resource) {
+      throw new NotFoundException('Recurso no encontrado');
+    }
+    return resource;
+  }
+
   async findByCategory(category: string): Promise<Resource[]> {
     return this.resourceRepository.find({
       where: { category, isPublished: true },
@@ -61,6 +71,13 @@ export class ResourcesService {
   }
 
   async incrementDownloadCount(id: string): Promise<void> {
-    await this.resourceRepository.increment({ id }, 'downloadCount', 1);
+    const result = await this.resourceRepository.increment(
+      { id, isPublished: true },
+      'downloadCount',
+      1,
+    );
+    if (!result.affected) {
+      throw new NotFoundException('Recurso no encontrado');
+    }
   }
 }

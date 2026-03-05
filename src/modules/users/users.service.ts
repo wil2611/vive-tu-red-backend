@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,6 +11,8 @@ import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 
+type SafeUser = Omit<User, 'password' | 'refreshToken'>;
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -17,13 +20,20 @@ export class UsersService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  async create(createUserDto: CreateUserDto): Promise<Omit<User, 'password' | 'refreshToken'>> {
+  private sanitizeUser(user: User): SafeUser {
+    const safeUser: Partial<User> = { ...user };
+    delete safeUser.password;
+    delete safeUser.refreshToken;
+    return safeUser as SafeUser;
+  }
+
+  async create(createUserDto: CreateUserDto): Promise<SafeUser> {
     const existingUser = await this.userRepository.findOne({
       where: { email: createUserDto.email },
     });
 
     if (existingUser) {
-      throw new ConflictException('El email ya está registrado');
+      throw new ConflictException('El email ya esta registrado');
     }
 
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
@@ -33,41 +43,56 @@ export class UsersService {
       password: hashedPassword,
     });
 
-    const savedUser = await this.userRepository.save(user);
-    const { password, refreshToken, ...result } = savedUser;
-    return result as Omit<User, 'password' | 'refreshToken'>;
+    return this.sanitizeUser(await this.userRepository.save(user));
   }
 
-  async findAll(): Promise<Omit<User, 'password' | 'refreshToken'>[]> {
+  async findAll(): Promise<SafeUser[]> {
     const users = await this.userRepository.find();
-    return users.map(({ password, refreshToken, ...user }) => user as Omit<User, 'password' | 'refreshToken'>);
+    return users.map((user) => this.sanitizeUser(user));
   }
 
   async findById(id: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { id } });
   }
 
+  async findSafeById(id: string): Promise<SafeUser> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    return this.sanitizeUser(user);
+  }
+
   async findByEmail(email: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { email } });
   }
 
-  async update(
-    id: string,
-    updateUserDto: UpdateUserDto,
-  ): Promise<Omit<User, 'password' | 'refreshToken'>> {
+  async update(id: string, updateUserDto: UpdateUserDto): Promise<SafeUser> {
     const user = await this.findById(id);
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    if (updateUserDto.password) {
-      updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+    if (updateUserDto.email && updateUserDto.email !== user.email) {
+      const userWithSameEmail = await this.userRepository.findOne({
+        where: { email: updateUserDto.email },
+      });
+
+      if (userWithSameEmail) {
+        throw new ConflictException('El email ya esta registrado');
+      }
+    }
+
+    const hashedPassword = updateUserDto.password
+      ? await bcrypt.hash(updateUserDto.password, 10)
+      : undefined;
+
+    if (hashedPassword) {
+      updateUserDto.password = hashedPassword;
     }
 
     Object.assign(user, updateUserDto);
-    const savedUser = await this.userRepository.save(user);
-    const { password, refreshToken, ...result } = savedUser;
-    return result as Omit<User, 'password' | 'refreshToken'>;
+    return this.sanitizeUser(await this.userRepository.save(user));
   }
 
   async remove(id: string): Promise<{ message: string }> {
@@ -75,6 +100,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
+
     await this.userRepository.remove(user);
     return { message: 'Usuario eliminado exitosamente' };
   }
@@ -86,8 +112,9 @@ export class UsersService {
     const hashedRefreshToken = refreshToken
       ? await bcrypt.hash(refreshToken, 10)
       : null;
+
     await this.userRepository.update(userId, {
-      refreshToken: hashedRefreshToken as any,
+      refreshToken: hashedRefreshToken,
     });
   }
 
@@ -99,8 +126,15 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
+
+    if (!newPassword || newPassword.length < 6) {
+      throw new BadRequestException(
+        'La contrasena debe tener al menos 6 caracteres',
+      );
+    }
+
     user.password = await bcrypt.hash(newPassword, 10);
     await this.userRepository.save(user);
-    return { message: 'Contraseña actualizada exitosamente' };
+    return { message: 'Contrasena actualizada exitosamente' };
   }
 }

@@ -12,6 +12,7 @@ import { ResourcesModule } from './modules/resources/resources.module';
 import { SupportModule } from './modules/support/support.module';
 import { NetworkModule } from './modules/network/network.module';
 import { StatsModule } from './modules/stats/stats.module';
+import { ContactModule } from './modules/contact/contact.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { StatsModule } from './modules/stats/stats.module';
     SupportModule,
     NetworkModule,
     StatsModule,
+    ContactModule,
   ],
   controllers: [AppController],
   providers: [

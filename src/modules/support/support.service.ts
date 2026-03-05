@@ -15,8 +15,7 @@ export class SupportService {
   async create(
     createSupportPathDto: CreateSupportPathDto,
   ): Promise<SupportPath> {
-    const supportPath =
-      this.supportPathRepository.create(createSupportPathDto);
+    const supportPath = this.supportPathRepository.create(createSupportPathDto);
     return this.supportPathRepository.save(supportPath);
   }
 
@@ -45,7 +44,17 @@ export class SupportService {
       where: { id },
     });
     if (!supportPath) {
-      throw new NotFoundException('Ruta de atención no encontrada');
+      throw new NotFoundException('Ruta de atencion no encontrada');
+    }
+    return supportPath;
+  }
+
+  async findActiveById(id: string): Promise<SupportPath> {
+    const supportPath = await this.supportPathRepository.findOne({
+      where: { id, isActive: true },
+    });
+    if (!supportPath) {
+      throw new NotFoundException('Ruta de atencion no encontrada');
     }
     return supportPath;
   }
@@ -62,6 +71,6 @@ export class SupportService {
   async remove(id: string): Promise<{ message: string }> {
     const supportPath = await this.findById(id);
     await this.supportPathRepository.remove(supportPath);
-    return { message: 'Ruta de atención eliminada exitosamente' };
+    return { message: 'Ruta de atencion eliminada exitosamente' };
   }
 }
