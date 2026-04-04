@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Body,
+  Query,
   UseGuards,
   Req,
   Headers,
@@ -10,6 +11,7 @@ import {
 import { StatsService } from './stats.service';
 import { CreatePageViewDto } from './dto/create-page-view.dto';
 import { CreateInteractionDto } from './dto/create-interaction.dto';
+import { GetDashboardStatsDto } from './dto/get-dashboard-stats.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -44,5 +46,12 @@ export class StatsController {
   @Roles(UserRole.ADMIN, UserRole.INVESTIGADOR)
   async getOverview() {
     return this.statsService.getOverview();
+  }
+
+  @Get('dashboard')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.INVESTIGADOR)
+  async getDashboard(@Query() query: GetDashboardStatsDto) {
+    return this.statsService.getDashboard(query);
   }
 }

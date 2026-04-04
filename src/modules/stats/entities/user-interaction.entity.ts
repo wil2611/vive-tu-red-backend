@@ -3,9 +3,14 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  Index,
 } from 'typeorm';
 
 @Entity('user_interactions')
+@Index('IDX_USER_INTERACTIONS_CREATED_AT', ['createdAt'])
+@Index('IDX_USER_INTERACTIONS_TYPE', ['type'])
+@Index('IDX_USER_INTERACTIONS_SESSION_ID', ['sessionId'])
+@Index('IDX_USER_INTERACTIONS_TYPE_CREATED_AT', ['type', 'createdAt'])
 export class UserInteraction {
   @PrimaryGeneratedColumn('uuid')
   id: string;

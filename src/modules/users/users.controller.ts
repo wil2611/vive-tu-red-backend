@@ -8,7 +8,9 @@ import {
   Param,
   UseGuards,
   Patch,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -17,6 +19,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
+
+type AuthenticatedRequest = Request & {
+  user: { id: string; email: string; role: UserRole };
+};
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,6 +39,17 @@ export class UsersController {
   @Roles(UserRole.ADMIN)
   async findAll() {
     return this.usersService.findAll();
+  }
+
+  @Get('roles')
+  @Roles(UserRole.ADMIN)
+  getRoles() {
+    return Object.values(UserRole).map((role) => ({ role }));
+  }
+
+  @Get('me')
+  async getMe(@Req() req: AuthenticatedRequest) {
+    return this.usersService.findSafeById(req.user.id);
   }
 
   @Get(':id')
