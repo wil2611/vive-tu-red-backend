@@ -36,21 +36,21 @@ export class ContactController {
 
   @Get('admin/all')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
   async findAll() {
     return this.contactService.findAll();
   }
 
   @Get('admin/unread')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
   async findUnread() {
     return this.contactService.findUnread();
   }
 
   @Patch('admin/:id/read')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
   async markAsRead(@Param('id') id: string) {
     return this.contactService.markAsRead(id);
   }

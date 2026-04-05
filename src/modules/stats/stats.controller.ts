@@ -43,14 +43,14 @@ export class StatsController {
 
   @Get('overview')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.INVESTIGADOR)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
   async getOverview() {
     return this.statsService.getOverview();
   }
 
   @Get('dashboard')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.INVESTIGADOR)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
   async getDashboard(@Query() query: GetDashboardStatsDto) {
     return this.statsService.getDashboard(query);
   }
