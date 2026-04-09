@@ -3,7 +3,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsBoolean,
-  IsNumber,
 } from 'class-validator';
 
 export class CreateSupportPathDto {
@@ -17,10 +16,6 @@ export class CreateSupportPathDto {
 
   @IsString()
   @IsOptional()
-  address?: string;
-
-  @IsString()
-  @IsOptional()
   phone?: string;
 
   @IsString()
@@ -29,23 +24,7 @@ export class CreateSupportPathDto {
 
   @IsString()
   @IsOptional()
-  website?: string;
-
-  @IsString()
-  @IsOptional()
-  city?: string;
-
-  @IsString()
-  @IsOptional()
-  department?: string;
-
-  @IsBoolean()
-  @IsOptional()
-  isEmergency?: boolean;
-
-  @IsString()
-  @IsOptional()
-  attentionProcess?: string;
+  ubicacion?: string;
 
   @IsString()
   @IsOptional()
@@ -54,8 +33,4 @@ export class CreateSupportPathDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
-
-  @IsNumber()
-  @IsOptional()
-  order?: number;
 }

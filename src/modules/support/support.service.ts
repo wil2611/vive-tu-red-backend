@@ -21,21 +21,21 @@ export class SupportService {
 
   async findAll(): Promise<SupportPath[]> {
     return this.supportPathRepository.find({
-      order: { order: 'ASC', institutionName: 'ASC' },
+      order: { institutionName: 'ASC' },
     });
   }
 
   async findActive(): Promise<SupportPath[]> {
     return this.supportPathRepository.find({
       where: { isActive: true },
-      order: { order: 'ASC', institutionName: 'ASC' },
+      order: { institutionName: 'ASC' },
     });
   }
 
   async findEmergency(): Promise<SupportPath[]> {
     return this.supportPathRepository.find({
-      where: { isActive: true, isEmergency: true },
-      order: { order: 'ASC' },
+      where: { isActive: true },
+      order: { institutionName: 'ASC' },
     });
   }
 
