@@ -1,9 +1,4 @@
-import {
-  IsString,
-  IsOptional,
-  IsBoolean,
-  IsArray,
-} from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsArray } from 'class-validator';
 
 export class UpdateResourceDto {
   @IsString()

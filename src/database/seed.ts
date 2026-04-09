@@ -57,7 +57,9 @@ const SUPPORT_PATH_SAMPLES: SupportPathSample[] = [
   },
 ];
 
-async function seedAdmin(queryRunner: ReturnType<DataSource['createQueryRunner']>) {
+async function seedAdmin(
+  queryRunner: ReturnType<DataSource['createQueryRunner']>,
+) {
   const existingAdmin = await queryRunner.query(
     `SELECT id FROM users WHERE role = 'admin' LIMIT 1`,
   );
@@ -72,7 +74,14 @@ async function seedAdmin(queryRunner: ReturnType<DataSource['createQueryRunner']
   await queryRunner.query(
     `INSERT INTO users ("email", "password", "firstName", "lastName", "role", "isActive")
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    ['admin@vivetured.com', hashedPassword, 'Admin', 'ViveTuRed', 'admin', true],
+    [
+      'admin@vivetured.com',
+      hashedPassword,
+      'Admin',
+      'ViveTuRed',
+      'admin',
+      true,
+    ],
   );
 
   console.log('Usuario administrador creado exitosamente');

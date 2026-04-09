@@ -58,7 +58,7 @@ export class AuthService {
       });
 
       const user = await this.usersService.findById(payload.sub);
-      if (!user || !user.refreshToken) {
+      if (!user || !user.refreshToken || !user.isActive) {
         throw new ForbiddenException('Acceso denegado');
       }
 

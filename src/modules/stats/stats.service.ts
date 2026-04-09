@@ -152,13 +152,12 @@ export class StatsService {
   }
 
   async getDashboard(query: GetDashboardStatsDto): Promise<DashboardResponse> {
-    const cacheKey = this.buildDashboardCacheKey(query);
+    const range = this.resolveDateRange(query);
+    const cacheKey = this.buildDashboardCacheKey(range);
     const cachedDashboard = this.getCachedDashboard(cacheKey);
     if (cachedDashboard) {
       return cachedDashboard;
     }
-
-    const range = this.resolveDateRange(query);
 
     const [
       pageViewsCurrent,
@@ -291,34 +290,31 @@ export class StatsService {
     const now = new Date();
     const rangeDays = query.rangeDays ?? 30;
 
-    let startDate: Date;
-    let endDate: Date;
+    let startDateKey: string;
+    let endDateKey: string;
 
     if (query.from || query.to) {
-      const fromDate = this.parseDashboardDate(query.from ?? query.to ?? '');
-      const toDate = this.parseDashboardDate(query.to ?? query.from ?? '');
+      const fromDateKey = this.toBusinessDateKey(query.from ?? query.to ?? '');
+      const toDateKey = this.toBusinessDateKey(query.to ?? query.from ?? '');
 
-      if (fromDate <= toDate) {
-        startDate = fromDate;
-        endDate = toDate;
+      if (fromDateKey <= toDateKey) {
+        startDateKey = fromDateKey;
+        endDateKey = toDateKey;
       } else {
-        startDate = toDate;
-        endDate = fromDate;
+        startDateKey = toDateKey;
+        endDateKey = fromDateKey;
       }
-
-      startDate.setHours(0, 0, 0, 0);
-      endDate.setHours(23, 59, 59, 999);
     } else {
-      endDate = now;
-      startDate = new Date(endDate.getTime() - (rangeDays - 1) * dayMs);
-      startDate.setHours(0, 0, 0, 0);
-      endDate.setHours(23, 59, 59, 999);
+      endDateKey = this.formatDateInTimezone(
+        now,
+        StatsService.BUSINESS_TIMEZONE,
+      );
+      startDateKey = this.addDaysToDateKey(endDateKey, -(rangeDays - 1));
     }
 
-    const days = Math.max(
-      1,
-      Math.ceil((endDate.getTime() - startDate.getTime() + 1) / dayMs),
-    );
+    const startDate = this.businessDayStartToUtc(startDateKey);
+    const endDate = this.businessDayEndToUtc(endDateKey);
+    const days = this.countDaysInclusiveByDateKey(startDateKey, endDateKey);
     const previousEndDate = new Date(startDate.getTime() - 1);
     const previousStartDate = new Date(
       previousEndDate.getTime() - days * dayMs + 1,
@@ -641,11 +637,13 @@ export class StatsService {
     return `${nextYear}-${nextMonth}-${nextDay}`;
   }
 
-  private buildDashboardCacheKey(query: GetDashboardStatsDto): string {
+  private buildDashboardCacheKey(range: DateRange): string {
     const payload = {
-      rangeDays: query.rangeDays ?? null,
-      from: query.from ?? null,
-      to: query.to ?? null,
+      startDate: range.startDate.toISOString(),
+      endDate: range.endDate.toISOString(),
+      previousStartDate: range.previousStartDate.toISOString(),
+      previousEndDate: range.previousEndDate.toISOString(),
+      days: range.days,
     };
     return JSON.stringify(payload);
   }
@@ -690,16 +688,58 @@ export class StatsService {
     }
   }
 
-  private parseDashboardDate(value: string): Date {
+  private toBusinessDateKey(value: string): string {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
     if (match) {
-      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+      return `${match[1]}-${match[2]}-${match[3]}`;
     }
 
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
-      return new Date();
+      return this.formatDateInTimezone(
+        new Date(),
+        StatsService.BUSINESS_TIMEZONE,
+      );
     }
-    return parsed;
+    return this.formatDateInTimezone(parsed, StatsService.BUSINESS_TIMEZONE);
+  }
+
+  private businessDayStartToUtc(dateKey: string): Date {
+    const [year, month, day] = this.parseDateKey(dateKey);
+    const utcMs =
+      Date.UTC(year, month - 1, day, 0, 0, 0, 0) +
+      StatsService.BUSINESS_TIMEZONE_OFFSET_MINUTES * 60_000;
+    return new Date(utcMs);
+  }
+
+  private businessDayEndToUtc(dateKey: string): Date {
+    const nextDateKey = this.addDaysToDateKey(dateKey, 1);
+    const nextDayStart = this.businessDayStartToUtc(nextDateKey);
+    return new Date(nextDayStart.getTime() - 1);
+  }
+
+  private countDaysInclusiveByDateKey(
+    startDateKey: string,
+    endDateKey: string,
+  ): number {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const startUtcDate = this.dateKeyToUtcMidnight(startDateKey);
+    const endUtcDate = this.dateKeyToUtcMidnight(endDateKey);
+    return Math.max(
+      1,
+      Math.floor((endUtcDate.getTime() - startUtcDate.getTime()) / dayMs) + 1,
+    );
+  }
+
+  private parseDateKey(dateKey: string): [number, number, number] {
+    const [year, month, day] = dateKey
+      .split('-')
+      .map((part) => Number.parseInt(part, 10));
+    return [year, month, day];
+  }
+
+  private dateKeyToUtcMidnight(dateKey: string): Date {
+    const [year, month, day] = this.parseDateKey(dateKey);
+    return new Date(Date.UTC(year, month - 1, day));
   }
 }

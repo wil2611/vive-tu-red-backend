@@ -29,10 +29,21 @@ export class UsersService {
     return safeUser as SafeUser;
   }
 
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
+  private async findByEmailInsensitive(email: string): Promise<User | null> {
+    const normalizedEmail = this.normalizeEmail(email);
+    return this.userRepository
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = :normalizedEmail', { normalizedEmail })
+      .getOne();
+  }
+
   async create(createUserDto: CreateUserDto): Promise<SafeUser> {
-    const existingUser = await this.userRepository.findOne({
-      where: { email: createUserDto.email },
-    });
+    const normalizedEmail = this.normalizeEmail(createUserDto.email);
+    const existingUser = await this.findByEmailInsensitive(normalizedEmail);
 
     if (existingUser) {
       throw new ConflictException('El email ya esta registrado');
@@ -42,6 +53,7 @@ export class UsersService {
 
     const user = this.userRepository.create({
       ...createUserDto,
+      email: normalizedEmail,
       password: hashedPassword,
     });
 
@@ -66,7 +78,18 @@ export class UsersService {
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    return this.userRepository.findOne({ where: { email } });
+    return this.findByEmailInsensitive(email);
+  }
+
+  async findSafeActiveById(id: string): Promise<SafeUser> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedException('Usuario desactivado');
+    }
+    return this.sanitizeUser(user);
   }
 
   async updateMyProfile(
@@ -78,9 +101,13 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
+    if (!user.isActive) {
+      throw new UnauthorizedException('Usuario desactivado');
+    }
+
     const normalizedEmail =
       typeof updateMyProfileDto.email === 'string'
-        ? updateMyProfileDto.email.trim()
+        ? this.normalizeEmail(updateMyProfileDto.email)
         : undefined;
     const normalizedFirstName =
       typeof updateMyProfileDto.firstName === 'string'
@@ -103,12 +130,11 @@ export class UsersService {
       throw new BadRequestException('El apellido no puede estar vacio');
     }
 
-    if (normalizedEmail && normalizedEmail !== user.email) {
-      const userWithSameEmail = await this.userRepository.findOne({
-        where: { email: normalizedEmail },
-      });
-
-      if (userWithSameEmail) {
+    const currentEmailNormalized = this.normalizeEmail(user.email);
+    if (normalizedEmail && normalizedEmail !== currentEmailNormalized) {
+      const userWithSameEmail =
+        await this.findByEmailInsensitive(normalizedEmail);
+      if (userWithSameEmail && userWithSameEmail.id !== user.id) {
         throw new ConflictException('El email ya esta registrado');
       }
     }
@@ -134,12 +160,18 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    if (updateUserDto.email && updateUserDto.email !== user.email) {
-      const userWithSameEmail = await this.userRepository.findOne({
-        where: { email: updateUserDto.email },
-      });
+    const normalizedEmail =
+      typeof updateUserDto.email === 'string'
+        ? this.normalizeEmail(updateUserDto.email)
+        : undefined;
 
-      if (userWithSameEmail) {
+    if (
+      normalizedEmail &&
+      normalizedEmail !== this.normalizeEmail(user.email)
+    ) {
+      const userWithSameEmail =
+        await this.findByEmailInsensitive(normalizedEmail);
+      if (userWithSameEmail && userWithSameEmail.id !== user.id) {
         throw new ConflictException('El email ya esta registrado');
       }
     }
@@ -153,6 +185,9 @@ export class UsersService {
     }
 
     Object.assign(user, updateUserDto);
+    if (normalizedEmail !== undefined) {
+      user.email = normalizedEmail;
+    }
     return this.sanitizeUser(await this.userRepository.save(user));
   }
 
@@ -209,6 +244,10 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
+    if (!user.isActive) {
+      throw new UnauthorizedException('Usuario desactivado');
+    }
+
     if (!newPassword || newPassword.length < 6) {
       throw new BadRequestException(
         'La contrasena debe tener al menos 6 caracteres',
@@ -231,6 +270,7 @@ export class UsersService {
     }
 
     user.password = await bcrypt.hash(newPassword, 10);
+    user.refreshToken = null;
     await this.userRepository.save(user);
 
     return { message: 'Contrasena actualizada exitosamente' };

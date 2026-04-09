@@ -51,7 +51,7 @@ export class UsersController {
 
   @Get('me')
   async getMe(@Req() req: AuthenticatedRequest) {
-    return this.usersService.findSafeById(req.user.id);
+    return this.usersService.findSafeActiveById(req.user.id);
   }
 
   @Put('me')
