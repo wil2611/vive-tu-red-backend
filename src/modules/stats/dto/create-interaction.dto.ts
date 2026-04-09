@@ -1,9 +1,22 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+
+export enum InteractionType {
+  BOOK_READ = 'book_read',
+  RESOURCE_DOWNLOAD = 'resource_download',
+  NETWORK_CREATED = 'network_created',
+  CONTACT_SUBMITTED = 'contact_submitted',
+}
 
 export class CreateInteractionDto {
-  @IsString()
+  @IsEnum(InteractionType)
   @IsNotEmpty()
-  type: string;
+  type: InteractionType;
 
   @IsString()
   @IsOptional()
@@ -13,8 +26,9 @@ export class CreateInteractionDto {
   @IsOptional()
   targetType?: string;
 
+  @IsObject()
   @IsOptional()
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 
   @IsString()
   @IsOptional()

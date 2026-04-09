@@ -15,6 +15,8 @@ import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UpdateMyProfileDto } from './dto/update-my-profile.dto';
+import { ChangeMyPasswordDto } from './dto/change-my-password.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -50,6 +52,26 @@ export class UsersController {
   @Get('me')
   async getMe(@Req() req: AuthenticatedRequest) {
     return this.usersService.findSafeById(req.user.id);
+  }
+
+  @Put('me')
+  async updateMyProfile(
+    @Req() req: AuthenticatedRequest,
+    @Body() updateMyProfileDto: UpdateMyProfileDto,
+  ) {
+    return this.usersService.updateMyProfile(req.user.id, updateMyProfileDto);
+  }
+
+  @Patch('me/change-password')
+  async changeMyPassword(
+    @Req() req: AuthenticatedRequest,
+    @Body() changeMyPasswordDto: ChangeMyPasswordDto,
+  ) {
+    return this.usersService.changeMyPassword(
+      req.user.id,
+      changeMyPasswordDto.currentPassword,
+      changeMyPasswordDto.newPassword,
+    );
   }
 
   @Get(':id')

@@ -9,6 +9,8 @@ import {
 export enum ContactMessageStatus {
   NEW = 'new',
   READ = 'read',
+  IN_PROGRESS = 'in_progress',
+  RESPONDED = 'responded',
 }
 
 @Entity('contact_messages')

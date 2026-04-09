@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, Like, Not, Repository } from 'typeorm';
 import { PageView } from './entities/page-view.entity';
 import { UserInteraction } from './entities/user-interaction.entity';
 import { CreatePageViewDto } from './dto/create-page-view.dto';
@@ -30,8 +30,50 @@ type RawInteractionRow = {
   count: string;
 };
 
+type KpiMetric = {
+  value: number;
+  previousValue: number;
+  changePct: number;
+};
+
+type DashboardResponse = {
+  range: {
+    startDate: string;
+    endDate: string;
+    previousStartDate: string;
+    previousEndDate: string;
+    days: number;
+  };
+  kpis: {
+    pageViews: KpiMetric;
+    interactions: KpiMetric;
+    uniqueSessions: KpiMetric;
+    resourceDownloads: KpiMetric;
+    bookReads: KpiMetric;
+    networksCreated: KpiMetric;
+    contactSubmitted: KpiMetric;
+    engagementRate: KpiMetric;
+  };
+  series: {
+    pageViewsByDay: Array<{ date: string; value: number }>;
+    interactionsByDay: Array<{ date: string; value: number }>;
+  };
+  topPages: Array<{ path: string; views: number }>;
+  interactionsByType: Array<{ type: string; count: number }>;
+};
+
 @Injectable()
 export class StatsService {
+  private static readonly BUSINESS_TIMEZONE = 'America/Bogota';
+  private static readonly BUSINESS_TIMEZONE_OFFSET_MINUTES = 300;
+  private static readonly DASHBOARD_CACHE_TTL_MS = 45_000;
+  private static readonly DASHBOARD_CACHE_MAX_ENTRIES = 100;
+
+  private readonly dashboardCache = new Map<
+    string,
+    { expiresAt: number; data: DashboardResponse }
+  >();
+
   constructor(
     @InjectRepository(PageView)
     private readonly pageViewRepository: Repository<PageView>,
@@ -75,13 +117,9 @@ export class StatsService {
       topPages,
       interactionsByType,
     ] = await Promise.all([
-      this.pageViewRepository.count(),
-      this.pageViewRepository.count({
-        where: { createdAt: Between(thirtyDaysAgo, now) },
-      }),
-      this.pageViewRepository.count({
-        where: { createdAt: Between(sevenDaysAgo, now) },
-      }),
+      this.countPublicPageViews(),
+      this.countPublicPageViews(thirtyDaysAgo, now),
+      this.countPublicPageViews(sevenDaysAgo, now),
       this.interactionRepository.count(),
       this.interactionRepository.count({
         where: { type: 'book_read' },
@@ -113,7 +151,13 @@ export class StatsService {
     };
   }
 
-  async getDashboard(query: GetDashboardStatsDto) {
+  async getDashboard(query: GetDashboardStatsDto): Promise<DashboardResponse> {
+    const cacheKey = this.buildDashboardCacheKey(query);
+    const cachedDashboard = this.getCachedDashboard(cacheKey);
+    if (cachedDashboard) {
+      return cachedDashboard;
+    }
+
     const range = this.resolveDateRange(query);
 
     const [
@@ -193,7 +237,7 @@ export class StatsService {
       pageViewsPrevious,
     );
 
-    return {
+    const dashboard: DashboardResponse = {
       range: {
         startDate: range.startDate.toISOString(),
         endDate: range.endDate.toISOString(),
@@ -237,6 +281,9 @@ export class StatsService {
       topPages,
       interactionsByType: topInteractions,
     };
+
+    this.setCachedDashboard(cacheKey, dashboard);
+    return dashboard;
   }
 
   private resolveDateRange(query: GetDashboardStatsDto): DateRange {
@@ -247,18 +294,20 @@ export class StatsService {
     let startDate: Date;
     let endDate: Date;
 
-    if (query.from && query.to) {
-      startDate = new Date(query.from);
-      endDate = new Date(query.to);
+    if (query.from || query.to) {
+      const fromDate = this.parseDashboardDate(query.from ?? query.to ?? '');
+      const toDate = this.parseDashboardDate(query.to ?? query.from ?? '');
+
+      if (fromDate <= toDate) {
+        startDate = fromDate;
+        endDate = toDate;
+      } else {
+        startDate = toDate;
+        endDate = fromDate;
+      }
 
       startDate.setHours(0, 0, 0, 0);
       endDate.setHours(23, 59, 59, 999);
-
-      if (startDate > endDate) {
-        const swap = startDate;
-        startDate = endDate;
-        endDate = swap;
-      }
     } else {
       endDate = now;
       startDate = new Date(endDate.getTime() - (rangeDays - 1) * dayMs);
@@ -271,7 +320,9 @@ export class StatsService {
       Math.ceil((endDate.getTime() - startDate.getTime() + 1) / dayMs),
     );
     const previousEndDate = new Date(startDate.getTime() - 1);
-    const previousStartDate = new Date(previousEndDate.getTime() - days * dayMs + 1);
+    const previousStartDate = new Date(
+      previousEndDate.getTime() - days * dayMs + 1,
+    );
 
     return {
       startDate,
@@ -302,9 +353,30 @@ export class StatsService {
     };
   }
 
-  private async countPageViews(startDate: Date, endDate: Date): Promise<number> {
+  private async countPageViews(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<number> {
+    return this.countPublicPageViews(startDate, endDate);
+  }
+
+  private async countPublicPageViews(
+    startDate?: Date,
+    endDate?: Date,
+  ): Promise<number> {
+    if (startDate && endDate) {
+      return this.pageViewRepository.count({
+        where: {
+          createdAt: Between(startDate, endDate),
+          path: Not(Like('/admin%')),
+        },
+      });
+    }
+
     return this.pageViewRepository.count({
-      where: { createdAt: Between(startDate, endDate) },
+      where: {
+        path: Not(Like('/admin%')),
+      },
     });
   }
 
@@ -331,39 +403,42 @@ export class StatsService {
     startDate: Date,
     endDate: Date,
   ): Promise<number> {
-    const [pageViewSessions, interactionSessions] = await Promise.all([
-      this.pageViewRepository
-        .createQueryBuilder('pv')
-        .select('DISTINCT pv.sessionId', 'sessionId')
-        .where('pv.createdAt BETWEEN :startDate AND :endDate', {
-          startDate,
-          endDate,
-        })
-        .andWhere('pv.sessionId IS NOT NULL')
-        .getRawMany<{ sessionId: string }>(),
-      this.interactionRepository
-        .createQueryBuilder('ui')
-        .select('DISTINCT ui.sessionId', 'sessionId')
-        .where('ui.createdAt BETWEEN :startDate AND :endDate', {
-          startDate,
-          endDate,
-        })
-        .andWhere('ui.sessionId IS NOT NULL')
-        .getRawMany<{ sessionId: string }>(),
-    ]);
+    const rawRows: unknown = await this.pageViewRepository.query(
+      `
+        SELECT COUNT(*)::int AS value
+        FROM (
+          SELECT pv."sessionId" AS "sessionId"
+          FROM page_views pv
+          WHERE pv."createdAt" BETWEEN $1 AND $2
+            AND pv."sessionId" IS NOT NULL
+            AND pv."path" NOT LIKE $3
+          UNION
+          SELECT ui."sessionId" AS "sessionId"
+          FROM user_interactions ui
+          WHERE ui."createdAt" BETWEEN $1 AND $2
+            AND ui."sessionId" IS NOT NULL
+        ) sessions
+      `,
+      [startDate, endDate, '/admin%'],
+    );
 
-    const unique = new Set<string>();
-    for (const row of pageViewSessions) {
-      if (row.sessionId) unique.add(row.sessionId);
+    if (!Array.isArray(rawRows) || rawRows.length === 0) {
+      return 0;
     }
-    for (const row of interactionSessions) {
-      if (row.sessionId) unique.add(row.sessionId);
+
+    const firstRow = rawRows[0] as { value?: unknown };
+    const value = firstRow.value;
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? Math.trunc(value) : 0;
     }
-    return unique.size;
+    if (typeof value === 'string') {
+      return Number.parseInt(value, 10) || 0;
+    }
+    return 0;
   }
 
   private async getDailyPageViews(startDate: Date, endDate: Date) {
-    const offsetMinutes = this.getServerTimezoneOffsetMinutes();
+    const offsetMinutes = this.getBusinessTimezoneOffsetMinutes();
 
     const rows = await this.pageViewRepository
       .createQueryBuilder('pv')
@@ -376,6 +451,9 @@ export class StatsService {
         startDate,
         endDate,
       })
+      .andWhere('pv.path NOT LIKE :adminPath', {
+        adminPath: '/admin%',
+      })
       .setParameter('offsetMinutes', offsetMinutes)
       .groupBy('date')
       .orderBy('date', 'ASC')
@@ -385,7 +463,7 @@ export class StatsService {
   }
 
   private async getDailyInteractions(startDate: Date, endDate: Date) {
-    const offsetMinutes = this.getServerTimezoneOffsetMinutes();
+    const offsetMinutes = this.getBusinessTimezoneOffsetMinutes();
 
     const rows = await this.interactionRepository
       .createQueryBuilder('ui')
@@ -407,7 +485,6 @@ export class StatsService {
   }
 
   private fillDailySeries(rows: RawCountRow[], startDate: Date, endDate: Date) {
-    const dayMs = 24 * 60 * 60 * 1000;
     const valuesByDay = new Map<string, number>();
 
     for (const row of rows) {
@@ -417,19 +494,24 @@ export class StatsService {
       );
     }
 
+    const startKey = this.formatDateInTimezone(
+      startDate,
+      StatsService.BUSINESS_TIMEZONE,
+    );
+    const endKey = this.formatDateInTimezone(
+      endDate,
+      StatsService.BUSINESS_TIMEZONE,
+    );
+
     const series: Array<{ date: string; value: number }> = [];
     for (
-      let cursor = new Date(startDate.getTime());
-      cursor <= endDate;
-      cursor = new Date(cursor.getTime() + dayMs)
+      let cursorKey = startKey;
+      cursorKey <= endKey;
+      cursorKey = this.addDaysToDateKey(cursorKey, 1)
     ) {
-      const year = cursor.getFullYear();
-      const month = String(cursor.getMonth() + 1).padStart(2, '0');
-      const day = String(cursor.getDate()).padStart(2, '0');
-      const key = `${year}-${month}-${day}`;
       series.push({
-        date: key,
-        value: valuesByDay.get(key) ?? 0,
+        date: cursorKey,
+        value: valuesByDay.get(cursorKey) ?? 0,
       });
     }
 
@@ -453,22 +535,21 @@ export class StatsService {
     return value;
   }
 
-  private getServerTimezoneOffsetMinutes(): number {
-    return new Date().getTimezoneOffset();
+  private getBusinessTimezoneOffsetMinutes(): number {
+    return StatsService.BUSINESS_TIMEZONE_OFFSET_MINUTES;
   }
 
-  private async getTopPages(
-    limit: number,
-    startDate?: Date,
-    endDate?: Date,
-  ) {
+  private async getTopPages(limit: number, startDate?: Date, endDate?: Date) {
     const query = this.pageViewRepository
       .createQueryBuilder('pv')
       .select('pv.path', 'path')
-      .addSelect('COUNT(*)', 'views');
+      .addSelect('COUNT(*)', 'views')
+      .where('pv.path NOT LIKE :adminPath', {
+        adminPath: '/admin%',
+      });
 
     if (startDate && endDate) {
-      query.where('pv.createdAt BETWEEN :startDate AND :endDate', {
+      query.andWhere('pv.createdAt BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
       });
@@ -518,14 +599,107 @@ export class StatsService {
   async getPageViewsByDate(startDate: Date, endDate: Date) {
     return this.pageViewRepository
       .createQueryBuilder('pv')
-      .select("DATE(pv.createdAt)", 'date')
+      .select('DATE(pv.createdAt)', 'date')
       .addSelect('COUNT(*)', 'views')
       .where('pv.createdAt BETWEEN :startDate AND :endDate', {
         startDate,
         endDate,
       })
+      .andWhere('pv.path NOT LIKE :adminPath', {
+        adminPath: '/admin%',
+      })
       .groupBy('date')
       .orderBy('date', 'ASC')
       .getRawMany();
+  }
+
+  private formatDateInTimezone(date: Date, timeZone: string): string {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
+    if (!year || !month || !day) {
+      return this.normalizeDateKey(date.toISOString());
+    }
+    return `${year}-${month}-${day}`;
+  }
+
+  private addDaysToDateKey(dateKey: string, days: number): string {
+    const [year, month, day] = dateKey
+      .split('-')
+      .map((part) => Number.parseInt(part, 10));
+    const date = new Date(Date.UTC(year, month - 1, day));
+    date.setUTCDate(date.getUTCDate() + days);
+    const nextYear = date.getUTCFullYear();
+    const nextMonth = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const nextDay = String(date.getUTCDate()).padStart(2, '0');
+    return `${nextYear}-${nextMonth}-${nextDay}`;
+  }
+
+  private buildDashboardCacheKey(query: GetDashboardStatsDto): string {
+    const payload = {
+      rangeDays: query.rangeDays ?? null,
+      from: query.from ?? null,
+      to: query.to ?? null,
+    };
+    return JSON.stringify(payload);
+  }
+
+  private getCachedDashboard(cacheKey: string): DashboardResponse | null {
+    const cacheEntry = this.dashboardCache.get(cacheKey);
+    if (!cacheEntry) return null;
+    if (Date.now() > cacheEntry.expiresAt) {
+      this.dashboardCache.delete(cacheKey);
+      return null;
+    }
+    return cacheEntry.data;
+  }
+
+  private setCachedDashboard(
+    cacheKey: string,
+    payload: DashboardResponse,
+  ): void {
+    this.dashboardCache.set(cacheKey, {
+      data: payload,
+      expiresAt: Date.now() + StatsService.DASHBOARD_CACHE_TTL_MS,
+    });
+
+    if (this.dashboardCache.size <= StatsService.DASHBOARD_CACHE_MAX_ENTRIES) {
+      return;
+    }
+
+    for (const [key, value] of this.dashboardCache) {
+      if (value.expiresAt <= Date.now()) {
+        this.dashboardCache.delete(key);
+      }
+    }
+
+    while (
+      this.dashboardCache.size > StatsService.DASHBOARD_CACHE_MAX_ENTRIES
+    ) {
+      const oldestKeyIterator = this.dashboardCache.keys().next();
+      if (oldestKeyIterator.done) {
+        break;
+      }
+      this.dashboardCache.delete(oldestKeyIterator.value);
+    }
+  }
+
+  private parseDashboardDate(value: string): Date {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if (match) {
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return new Date();
+    }
+    return parsed;
   }
 }

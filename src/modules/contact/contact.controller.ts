@@ -7,20 +7,34 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { ContactService } from './contact.service';
-import { CreateContactMessageDto } from './dto/create-contact-message.dto';
+import {
+  CreateContactMessageDto,
+  ListAdminContactMessagesDto,
+  UpdateContactMessageStatusDto,
+} from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { ContactMessageStatus } from './entities';
+
+type AuthenticatedRequest = Request & {
+  user: { id: string; email: string; role: UserRole };
+};
 
 @Controller(['contact', 'contacto'])
 export class ContactController {
   constructor(private readonly contactService: ContactService) {}
+
+  private canSeeSensitiveMetadata(req: AuthenticatedRequest): boolean {
+    return req.user.role === UserRole.ADMIN;
+  }
 
   @Post()
   async create(
@@ -37,22 +51,67 @@ export class ContactController {
   @Get('admin/all')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
-  async findAll() {
-    return this.contactService.findAll();
+  async findAll(@Req() req: AuthenticatedRequest) {
+    const result = await this.contactService.listAdminMessages(
+      { page: 1, limit: 200 },
+      this.canSeeSensitiveMetadata(req),
+    );
+
+    return result.items;
   }
 
   @Get('admin/unread')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
-  async findUnread() {
-    return this.contactService.findUnread();
+  async findUnread(@Req() req: AuthenticatedRequest) {
+    const result = await this.contactService.listAdminMessages(
+      {
+        page: 1,
+        limit: 200,
+        status: ContactMessageStatus.NEW,
+      },
+      this.canSeeSensitiveMetadata(req),
+    );
+
+    return result.items;
+  }
+
+  @Get('admin/messages')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
+  async listAdminMessages(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: ListAdminContactMessagesDto,
+  ) {
+    return this.contactService.listAdminMessages(
+      query,
+      this.canSeeSensitiveMetadata(req),
+    );
   }
 
   @Patch('admin/:id/read')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
-  async markAsRead(@Param('id') id: string) {
-    return this.contactService.markAsRead(id);
+  async markAsRead(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.contactService.markAsRead(
+      id,
+      this.canSeeSensitiveMetadata(req),
+    );
+  }
+
+  @Patch('admin/:id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() updateStatusDto: UpdateContactMessageStatusDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.contactService.updateStatus(
+      id,
+      updateStatusDto.status,
+      this.canSeeSensitiveMetadata(req),
+    );
   }
 
   @Delete('admin/:id')
