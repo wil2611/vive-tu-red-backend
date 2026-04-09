@@ -27,11 +27,6 @@ export class SupportController {
     return this.supportService.findActive();
   }
 
-  @Get('emergency')
-  async findEmergency() {
-    return this.supportService.findEmergency();
-  }
-
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.supportService.findActiveById(id);

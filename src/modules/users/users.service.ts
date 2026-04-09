@@ -12,6 +12,7 @@ import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateMyProfileDto } from './dto/update-my-profile.dto';
+import { UserRole } from '../../common/enums/user-role.enum';
 
 type SafeUser = Omit<User, 'password' | 'refreshToken'>;
 
@@ -41,12 +42,53 @@ export class UsersService {
       .getOne();
   }
 
+  private async countActiveAdmins(): Promise<number> {
+    return this.userRepository.count({
+      where: {
+        role: UserRole.ADMIN,
+        isActive: true,
+      },
+    });
+  }
+
+  private async ensureAtLeastOneActiveAdmin(
+    user: User,
+    nextRole: UserRole,
+    nextIsActive: boolean,
+  ): Promise<void> {
+    const isCurrentlyActiveAdmin =
+      user.role === UserRole.ADMIN && user.isActive === true;
+    const willRemainActiveAdmin =
+      nextRole === UserRole.ADMIN && nextIsActive === true;
+
+    if (!isCurrentlyActiveAdmin || willRemainActiveAdmin) {
+      return;
+    }
+
+    const activeAdmins = await this.countActiveAdmins();
+    if (activeAdmins <= 1) {
+      throw new BadRequestException(
+        'Debe existir al menos un administrador activo',
+      );
+    }
+  }
+
   async create(createUserDto: CreateUserDto): Promise<SafeUser> {
     const normalizedEmail = this.normalizeEmail(createUserDto.email);
+    const normalizedFirstName = createUserDto.firstName.trim();
+    const normalizedLastName = createUserDto.lastName.trim();
     const existingUser = await this.findByEmailInsensitive(normalizedEmail);
 
     if (existingUser) {
       throw new ConflictException('El email ya esta registrado');
+    }
+
+    if (!normalizedFirstName) {
+      throw new BadRequestException('El nombre no puede estar vacio');
+    }
+
+    if (!normalizedLastName) {
+      throw new BadRequestException('El apellido no puede estar vacio');
     }
 
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
@@ -54,6 +96,8 @@ export class UsersService {
     const user = this.userRepository.create({
       ...createUserDto,
       email: normalizedEmail,
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
       password: hashedPassword,
     });
 
@@ -154,16 +198,55 @@ export class UsersService {
     return this.sanitizeUser(await this.userRepository.save(user));
   }
 
-  async update(id: string, updateUserDto: UpdateUserDto): Promise<SafeUser> {
+  async update(
+    id: string,
+    updateUserDto: UpdateUserDto,
+    actorUserId: string,
+  ): Promise<SafeUser> {
     const user = await this.findById(id);
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (actorUserId === id) {
+      if (updateUserDto.isActive === false) {
+        throw new BadRequestException('No puedes desactivar tu propio usuario');
+      }
+
+      if (
+        updateUserDto.role !== undefined &&
+        updateUserDto.role !== user.role
+      ) {
+        throw new BadRequestException(
+          'No puedes cambiar tu propio rol desde esta seccion',
+        );
+      }
     }
 
     const normalizedEmail =
       typeof updateUserDto.email === 'string'
         ? this.normalizeEmail(updateUserDto.email)
         : undefined;
+    const normalizedFirstName =
+      typeof updateUserDto.firstName === 'string'
+        ? updateUserDto.firstName.trim()
+        : undefined;
+    const normalizedLastName =
+      typeof updateUserDto.lastName === 'string'
+        ? updateUserDto.lastName.trim()
+        : undefined;
+
+    if (normalizedEmail !== undefined && normalizedEmail.length === 0) {
+      throw new BadRequestException('El email no puede estar vacio');
+    }
+
+    if (normalizedFirstName !== undefined && normalizedFirstName.length === 0) {
+      throw new BadRequestException('El nombre no puede estar vacio');
+    }
+
+    if (normalizedLastName !== undefined && normalizedLastName.length === 0) {
+      throw new BadRequestException('El apellido no puede estar vacio');
+    }
 
     if (
       normalizedEmail &&
@@ -176,26 +259,46 @@ export class UsersService {
       }
     }
 
+    const nextRole = updateUserDto.role ?? user.role;
+    const nextIsActive = updateUserDto.isActive ?? user.isActive;
+    await this.ensureAtLeastOneActiveAdmin(user, nextRole, nextIsActive);
+
     const hashedPassword = updateUserDto.password
       ? await bcrypt.hash(updateUserDto.password, 10)
       : undefined;
 
-    if (hashedPassword) {
-      updateUserDto.password = hashedPassword;
+    if (normalizedFirstName !== undefined) {
+      user.firstName = normalizedFirstName;
     }
-
-    Object.assign(user, updateUserDto);
+    if (normalizedLastName !== undefined) {
+      user.lastName = normalizedLastName;
+    }
+    if (updateUserDto.role !== undefined) {
+      user.role = updateUserDto.role;
+    }
+    if (updateUserDto.isActive !== undefined) {
+      user.isActive = updateUserDto.isActive;
+    }
+    if (hashedPassword) {
+      user.password = hashedPassword;
+    }
     if (normalizedEmail !== undefined) {
       user.email = normalizedEmail;
     }
     return this.sanitizeUser(await this.userRepository.save(user));
   }
 
-  async remove(id: string): Promise<{ message: string }> {
+  async remove(id: string, actorUserId: string): Promise<{ message: string }> {
     const user = await this.findById(id);
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
+
+    if (actorUserId === id) {
+      throw new BadRequestException('No puedes eliminar tu propio usuario');
+    }
+
+    await this.ensureAtLeastOneActiveAdmin(user, user.role, false);
 
     await this.userRepository.remove(user);
     return { message: 'Usuario eliminado exitosamente' };

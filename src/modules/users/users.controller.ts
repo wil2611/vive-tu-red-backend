@@ -82,14 +82,18 @@ export class UsersController {
 
   @Put(':id')
   @Roles(UserRole.ADMIN)
-  async update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.usersService.update(id, updateUserDto);
+  async update(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
+    return this.usersService.update(id, updateUserDto, req.user.id);
   }
 
   @Delete(':id')
   @Roles(UserRole.ADMIN)
-  async remove(@Param('id') id: string) {
-    return this.usersService.remove(id);
+  async remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.usersService.remove(id, req.user.id);
   }
 
   @Patch(':id/reset-password')

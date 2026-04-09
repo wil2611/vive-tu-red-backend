@@ -1,6 +1,7 @@
 import {
   IsEmail,
   IsEnum,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsBoolean,
@@ -19,10 +20,12 @@ export class UpdateUserDto {
   password?: string;
 
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   firstName?: string;
 
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   lastName?: string;
 

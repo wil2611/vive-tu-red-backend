@@ -15,19 +15,19 @@ export class SupportPath {
   institutionName: string;
 
   @Column({ type: 'text', nullable: true })
-  description: string;
+  description: string | null;
 
   @Column({ nullable: true })
-  phone: string;
+  phone: string | null;
 
   @Column({ nullable: true })
-  email: string;
+  email: string | null;
 
   @Column({ name: 'city', nullable: true })
-  ubicacion: string;
+  ubicacion: string | null;
 
   @Column({ nullable: true })
-  schedule: string;
+  schedule: string | null;
 
   @Column({ default: true })
   isActive: boolean;
