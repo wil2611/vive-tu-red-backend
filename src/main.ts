@@ -13,8 +13,34 @@ async function bootstrap() {
   app.use(helmet());
 
   // CORS restrictivo
+  const configuredOrigins = (
+    configService.get<string>('FRONTEND_URL', '') ?? ''
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+  const isProduction = nodeEnv === 'production';
+
+  const localOrigins = isProduction
+    ? []
+    : ['http://localhost:3000', 'http://localhost:3001'];
+
+  const frontendOrigins = new Set<string>([
+    ...localOrigins,
+    ...configuredOrigins,
+  ]);
+
   app.enableCors({
-    origin: configService.get<string>('FRONTEND_URL', 'http://localhost:3001'),
+    origin: (origin, callback) => {
+      // Allow same-origin or non-browser clients (no Origin header).
+      if (!origin || frontendOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
   });

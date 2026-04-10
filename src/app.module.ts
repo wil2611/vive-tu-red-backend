@@ -13,6 +13,7 @@ import { SupportModule } from './modules/support/support.module';
 import { NetworkModule } from './modules/network/network.module';
 import { StatsModule } from './modules/stats/stats.module';
 import { ContactModule } from './modules/contact/contact.module';
+import { TeamModule } from './modules/team/team.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { ContactModule } from './modules/contact/contact.module';
     StoriesModule,
     ResourcesModule,
     SupportModule,
+    TeamModule,
     NetworkModule,
     StatsModule,
     ContactModule,
