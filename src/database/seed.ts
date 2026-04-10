@@ -24,6 +24,15 @@ type SupportPathSample = {
   isActive: boolean;
 };
 
+type ProjectAllySample = {
+  institutionName: string;
+  roleLabel: string;
+  type: 'ally' | 'participant';
+  summary: string;
+  participationScope: string;
+  isActive: boolean;
+};
+
 const SUPPORT_PATH_SAMPLES: SupportPathSample[] = [
   {
     institutionName: 'Comisaria de Familia',
@@ -53,6 +62,29 @@ const SUPPORT_PATH_SAMPLES: SupportPathSample[] = [
     phone: '155',
     email: null,
     schedule: 'Atencion 24/7',
+    isActive: true,
+  },
+];
+
+const PROJECT_ALLY_SAMPLES: ProjectAllySample[] = [
+  {
+    institutionName: 'Universidad del Atlantico',
+    roleLabel: 'Aliado clave',
+    type: 'ally',
+    summary:
+      'Aliada en la coordinacion del plan de trabajo y en la articulacion institucional para ampliar el alcance del proyecto en Educacion Superior.',
+    participationScope:
+      'Los talleres seran disenados, coordinados y desarrollados por el equipo investigador de la Universidad del Norte.',
+    isActive: true,
+  },
+  {
+    institutionName: 'Red Colombiana de Mujeres Cientificas (RCMC)',
+    roleLabel: 'Participante invitada',
+    type: 'participant',
+    summary:
+      'Participara en espacios de socializacion y reflexion colectiva sobre resultados, fortaleciendo el dialogo interdisciplinario y la apropiacion social del conocimiento.',
+    participationScope:
+      'Su participacion no contempla responsabilidades de ejecucion, coordinacion ni produccion de entregables del proyecto.',
     isActive: true,
   },
 ];
@@ -127,6 +159,42 @@ async function seedSupportPaths(
   console.log('Se verificaron 3 rutas de atencion de ejemplo');
 }
 
+async function seedProjectAllies(
+  queryRunner: ReturnType<DataSource['createQueryRunner']>,
+) {
+  for (const sample of PROJECT_ALLY_SAMPLES) {
+    const existing = await queryRunner.query(
+      `SELECT id FROM project_allies WHERE "institutionName" = $1 AND "type" = $2 LIMIT 1`,
+      [sample.institutionName, sample.type],
+    );
+
+    if (existing.length > 0) {
+      continue;
+    }
+
+    await queryRunner.query(
+      `INSERT INTO project_allies (
+        "institutionName",
+        "roleLabel",
+        "type",
+        "summary",
+        "participationScope",
+        "isActive"
+      ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        sample.institutionName,
+        sample.roleLabel,
+        sample.type,
+        sample.summary,
+        sample.participationScope,
+        sample.isActive,
+      ],
+    );
+  }
+
+  console.log('Se verificaron 2 aliados/participantes de ejemplo');
+}
+
 async function seed() {
   await AppDataSource.initialize();
   console.log('Conexion a la base de datos establecida');
@@ -136,6 +204,7 @@ async function seed() {
   try {
     await seedAdmin(queryRunner);
     await seedSupportPaths(queryRunner);
+    await seedProjectAllies(queryRunner);
   } catch (error) {
     console.error('Error al crear el seed:', error);
   } finally {

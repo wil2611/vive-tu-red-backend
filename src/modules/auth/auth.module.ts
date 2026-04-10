@@ -16,14 +16,14 @@ import { UsersModule } from '../users/users.module';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const jwtExpiration = parseInt(
-          configService.get<string>('JWT_EXPIRATION', '3600'),
+          configService.get<string>('JWT_EXPIRATION', '900'),
           10,
         );
 
         return {
           secret: configService.get<string>('JWT_SECRET'),
           signOptions: {
-            expiresIn: Number.isNaN(jwtExpiration) ? 3600 : jwtExpiration,
+            expiresIn: Number.isNaN(jwtExpiration) ? 900 : jwtExpiration,
           },
         };
       },

@@ -13,8 +13,10 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateMyProfileDto } from './dto/update-my-profile.dto';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { revokeAccessTokensForUser } from '../../common/security/access-token-revocation';
 
 type SafeUser = Omit<User, 'password' | 'refreshToken'>;
+const PASSWORD_MIN_LENGTH = 10;
 
 @Injectable()
 export class UsersService {
@@ -32,6 +34,12 @@ export class UsersService {
 
   private normalizeEmail(email: string): string {
     return email.trim().toLowerCase();
+  }
+
+  private hasStrongPassword(password: string): boolean {
+    const hasLetter = /[A-Za-z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    return password.length >= PASSWORD_MIN_LENGTH && hasLetter && hasNumber;
   }
 
   private async findByEmailInsensitive(email: string): Promise<User | null> {
@@ -89,6 +97,12 @@ export class UsersService {
 
     if (!normalizedLastName) {
       throw new BadRequestException('El apellido no puede estar vacio');
+    }
+
+    if (!this.hasStrongPassword(createUserDto.password)) {
+      throw new BadRequestException(
+        `La contrasena debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres, una letra y un numero`,
+      );
     }
 
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
@@ -263,8 +277,21 @@ export class UsersService {
     const nextIsActive = updateUserDto.isActive ?? user.isActive;
     await this.ensureAtLeastOneActiveAdmin(user, nextRole, nextIsActive);
 
-    const hashedPassword = updateUserDto.password
-      ? await bcrypt.hash(updateUserDto.password, 10)
+    const normalizedPassword =
+      typeof updateUserDto.password === 'string'
+        ? updateUserDto.password.trim()
+        : undefined;
+
+    if (normalizedPassword !== undefined) {
+      if (!this.hasStrongPassword(normalizedPassword)) {
+        throw new BadRequestException(
+          `La contrasena debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres, una letra y un numero`,
+        );
+      }
+    }
+
+    const hashedPassword = normalizedPassword
+      ? await bcrypt.hash(normalizedPassword, 10)
       : undefined;
 
     if (normalizedFirstName !== undefined) {
@@ -281,6 +308,8 @@ export class UsersService {
     }
     if (hashedPassword) {
       user.password = hashedPassword;
+      user.refreshToken = null;
+      revokeAccessTokensForUser(user.id);
     }
     if (normalizedEmail !== undefined) {
       user.email = normalizedEmail;
@@ -326,13 +355,16 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
 
-    if (!newPassword || newPassword.length < 6) {
+    const normalizedPassword = newPassword?.trim();
+    if (!normalizedPassword || !this.hasStrongPassword(normalizedPassword)) {
       throw new BadRequestException(
-        'La contrasena debe tener al menos 6 caracteres',
+        `La contrasena debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres, una letra y un numero`,
       );
     }
 
-    user.password = await bcrypt.hash(newPassword, 10);
+    user.password = await bcrypt.hash(normalizedPassword, 10);
+    user.refreshToken = null;
+    revokeAccessTokensForUser(user.id);
     await this.userRepository.save(user);
     return { message: 'Contrasena actualizada exitosamente' };
   }
@@ -351,13 +383,14 @@ export class UsersService {
       throw new UnauthorizedException('Usuario desactivado');
     }
 
-    if (!newPassword || newPassword.length < 6) {
+    const normalizedNewPassword = newPassword?.trim();
+    if (!normalizedNewPassword || !this.hasStrongPassword(normalizedNewPassword)) {
       throw new BadRequestException(
-        'La contrasena debe tener al menos 6 caracteres',
+        `La contrasena debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres, una letra y un numero`,
       );
     }
 
-    if (currentPassword === newPassword) {
+    if (currentPassword === normalizedNewPassword) {
       throw new BadRequestException(
         'La nueva contrasena debe ser diferente a la actual',
       );
@@ -372,8 +405,9 @@ export class UsersService {
       throw new UnauthorizedException('La contrasena actual no es valida');
     }
 
-    user.password = await bcrypt.hash(newPassword, 10);
+    user.password = await bcrypt.hash(normalizedNewPassword, 10);
     user.refreshToken = null;
+    revokeAccessTokensForUser(user.id);
     await this.userRepository.save(user);
 
     return { message: 'Contrasena actualizada exitosamente' };

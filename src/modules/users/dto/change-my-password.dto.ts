@@ -8,6 +8,6 @@ export class ChangeMyPasswordDto {
 
   @IsString()
   @IsNotEmpty()
-  @MinLength(6)
+  @MinLength(10)
   newPassword: string;
 }

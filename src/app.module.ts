@@ -14,6 +14,7 @@ import { NetworkModule } from './modules/network/network.module';
 import { StatsModule } from './modules/stats/stats.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { TeamModule } from './modules/team/team.module';
+import { AlliesModule } from './modules/allies/allies.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { TeamModule } from './modules/team/team.module';
     ResourcesModule,
     SupportModule,
     TeamModule,
+    AlliesModule,
     NetworkModule,
     StatsModule,
     ContactModule,
