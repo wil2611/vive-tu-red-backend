@@ -34,6 +34,15 @@ export class ResourcesService {
     );
   }
 
+  private normalizeOptionalText(value: unknown): string | null {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== 'string') {
+      throw new BadRequestException('El valor enviado debe ser texto valido.');
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
   async create(createResourceDto: CreateResourceDto): Promise<Resource> {
     this.ensurePublishable({
       isPublished: createResourceDto.isPublished ?? true,
@@ -95,12 +104,48 @@ export class ResourcesService {
   ): Promise<Resource> {
     const resource = await this.findById(id);
 
+    const nextIsPublished =
+      updateResourceDto.isPublished ?? resource.isPublished;
+    const nextFileUrl =
+      updateResourceDto.fileUrl !== undefined
+        ? this.normalizeOptionalText(updateResourceDto.fileUrl)
+        : resource.fileUrl;
+
     this.ensurePublishable({
-      isPublished: updateResourceDto.isPublished ?? resource.isPublished,
-      fileUrl: updateResourceDto.fileUrl ?? resource.fileUrl,
+      isPublished: nextIsPublished,
+      fileUrl: nextFileUrl,
     });
 
-    Object.assign(resource, updateResourceDto);
+    if (updateResourceDto.title !== undefined) {
+      resource.title = updateResourceDto.title;
+    }
+
+    if (updateResourceDto.description !== undefined) {
+      resource.description = this.normalizeOptionalText(
+        updateResourceDto.description,
+      );
+    }
+
+    if (updateResourceDto.type !== undefined) {
+      resource.type = updateResourceDto.type;
+    }
+
+    if (updateResourceDto.fileUrl !== undefined) {
+      resource.fileUrl = nextFileUrl;
+    }
+
+    if (updateResourceDto.category !== undefined) {
+      resource.category = updateResourceDto.category;
+    }
+
+    if (updateResourceDto.tags !== undefined) {
+      resource.tags = updateResourceDto.tags ?? null;
+    }
+
+    if (updateResourceDto.isPublished !== undefined) {
+      resource.isPublished = updateResourceDto.isPublished;
+    }
+
     return this.resourceRepository.save(resource);
   }
 

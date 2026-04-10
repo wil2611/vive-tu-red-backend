@@ -11,23 +11,23 @@ export class Resource {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column()
-  title: string;
+  @Column({ type: 'text', nullable: true })
+  title: string | null;
 
   @Column({ type: 'text', nullable: true })
-  description: string;
+  description: string | null;
 
-  @Column()
-  type: string; // 'pdf' | 'infografia' | 'guia' | 'cartilla'
+  @Column({ type: 'text', nullable: true })
+  type: string | null; // 'pdf' | 'infografia' | 'guia' | 'cartilla'
 
-  @Column({ nullable: true })
-  fileUrl: string;
+  @Column({ type: 'text', nullable: true })
+  fileUrl: string | null;
 
-  @Column({ nullable: true })
-  category: string;
+  @Column({ type: 'varchar', nullable: true })
+  category: string | null;
 
   @Column('simple-array', { nullable: true })
-  tags: string[];
+  tags: string[] | null;
 
   @Column({ default: true })
   isPublished: boolean;
