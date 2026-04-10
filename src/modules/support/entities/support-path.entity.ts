@@ -17,16 +17,16 @@ export class SupportPath {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   phone: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   email: string | null;
 
-  @Column({ name: 'city', nullable: true })
+  @Column({ type: 'varchar', name: 'city', nullable: true })
   ubicacion: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   schedule: string | null;
 
   @Column({ default: true })

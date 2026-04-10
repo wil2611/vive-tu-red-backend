@@ -24,9 +24,6 @@ export class Resource {
   fileUrl: string;
 
   @Column({ nullable: true })
-  thumbnailUrl: string;
-
-  @Column({ nullable: true })
   category: string;
 
   @Column('simple-array', { nullable: true })
@@ -36,7 +33,7 @@ export class Resource {
   isPublished: boolean;
 
   @Column({ default: 0 })
-  downloadCount: number;
+  openCount: number;
 
   @CreateDateColumn()
   createdAt: Date;

@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
+import { InteractionType } from '../stats/dto/create-interaction.dto';
 
 @Controller('resources')
 export class ResourcesController {
@@ -37,10 +38,22 @@ export class ResourcesController {
     return this.resourcesService.findPublishedById(id);
   }
 
+  @Patch(':id/open')
+  async trackOpen(@Param('id') id: string) {
+    await this.resourcesService.trackOpenWithInteraction(
+      id,
+      InteractionType.RESOURCE_OPEN,
+    );
+    return { message: 'Apertura registrada' };
+  }
+
   @Patch(':id/download')
-  async trackDownload(@Param('id') id: string) {
-    await this.resourcesService.incrementDownloadCount(id);
-    return { message: 'Descarga registrada' };
+  async trackDownloadLegacy(@Param('id') id: string) {
+    await this.resourcesService.trackOpenWithInteraction(
+      id,
+      InteractionType.RESOURCE_DOWNLOAD,
+    );
+    return { message: 'Apertura registrada' };
   }
 
   // ── Endpoints protegidos ─────────────────────────────

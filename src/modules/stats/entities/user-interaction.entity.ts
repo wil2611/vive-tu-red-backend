@@ -16,7 +16,7 @@ export class UserInteraction {
   id: string;
 
   @Column()
-  type: string; // 'book_read', 'resource_download', 'network_created', etc.
+  type: string; // 'book_read', 'resource_open', 'network_created', etc.
 
   @Column({ nullable: true })
   targetId: string; // ID del recurso relacionado

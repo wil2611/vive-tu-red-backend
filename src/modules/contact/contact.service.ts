@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, MoreThanOrEqual, Repository } from 'typeorm';
 import { CreateContactMessageDto } from './dto/create-contact-message.dto';
 import { ListAdminContactMessagesDto } from './dto/list-admin-contact-messages.dto';
 import { ContactMessage, ContactMessageStatus } from './entities';
@@ -19,16 +24,29 @@ export type AdminContactMessageView = {
   userAgent?: string | null;
 };
 
+export type ContactMessageStatusTotals = {
+  new: number;
+  read: number;
+  in_progress: number;
+  responded: number;
+};
+
 export type AdminContactMessagesPage = {
   items: AdminContactMessageView[];
   total: number;
   page: number;
   limit: number;
   totalPages: number;
+  summary: {
+    totalAll: number;
+    statusTotals: ContactMessageStatusTotals;
+  };
 };
 
 @Injectable()
 export class ContactService {
+  private static readonly DUPLICATE_WINDOW_MS = 2 * 60 * 1000;
+
   constructor(
     @InjectRepository(ContactMessage)
     private readonly contactRepository: Repository<ContactMessage>,
@@ -77,6 +95,26 @@ export class ContactService {
     createContactMessageDto: CreateContactMessageDto,
     metadata?: { ip?: string; userAgent?: string },
   ): Promise<{ message: string }> {
+    const duplicateWindowStart = new Date(
+      Date.now() - ContactService.DUPLICATE_WINDOW_MS,
+    );
+    const recentlySubmitted = await this.contactRepository.findOne({
+      where: {
+        email: createContactMessageDto.email,
+        subject: createContactMessageDto.subject,
+        message: createContactMessageDto.message,
+        createdAt: MoreThanOrEqual(duplicateWindowStart),
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (recentlySubmitted) {
+      throw new HttpException(
+        'Ya recibimos un mensaje similar hace poco. Intenta de nuevo en unos minutos.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     const contactMessage = this.contactRepository.create({
       ...createContactMessageDto,
       status: ContactMessageStatus.NEW,
@@ -97,25 +135,54 @@ export class ContactService {
     const limit = Math.min(100, Math.max(1, query.limit ?? 20));
     const safeSearch = (query.q ?? '').trim();
 
-    const builder = this.contactRepository
-      .createQueryBuilder('contact')
-      .orderBy('contact.createdAt', 'DESC');
-
-    if (query.status) {
-      builder.andWhere('contact.status = :status', { status: query.status });
-    }
+    const baseBuilder = this.contactRepository.createQueryBuilder('contact');
 
     if (safeSearch.length > 0) {
       const term = `%${safeSearch}%`;
-      builder.andWhere(
+      baseBuilder.andWhere(
         new Brackets((subQuery) => {
           subQuery
             .where('contact.name ILIKE :term', { term })
             .orWhere('contact.email ILIKE :term', { term })
-            .orWhere('contact.subject ILIKE :term', { term })
-            .orWhere('contact.message ILIKE :term', { term });
+            .orWhere('contact.subject ILIKE :term', { term });
+
+          // El campo message suele ser el mas pesado; evitamos barrerlo con
+          // consultas demasiado cortas que suelen ser ruido.
+          if (safeSearch.length >= 3) {
+            subQuery.orWhere('contact.message ILIKE :term', { term });
+          }
         }),
       );
+    }
+
+    const statusRows = await baseBuilder
+      .clone()
+      .select('contact.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('contact.status')
+      .getRawMany<{ status: ContactMessageStatus; count: string }>();
+
+    const statusTotals: ContactMessageStatusTotals = {
+      new: 0,
+      read: 0,
+      in_progress: 0,
+      responded: 0,
+    };
+
+    for (const row of statusRows) {
+      statusTotals[row.status] = Number(row.count);
+    }
+
+    const totalAll =
+      statusTotals.new +
+      statusTotals.read +
+      statusTotals.in_progress +
+      statusTotals.responded;
+
+    const builder = baseBuilder.clone().orderBy('contact.createdAt', 'DESC');
+
+    if (query.status) {
+      builder.andWhere('contact.status = :status', { status: query.status });
     }
 
     const [initialItems, total] = await builder
@@ -143,6 +210,10 @@ export class ContactService {
       page,
       limit,
       totalPages,
+      summary: {
+        totalAll,
+        statusTotals,
+      },
     };
   }
 

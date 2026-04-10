@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Like, Not, Repository } from 'typeorm';
+import { Between, In, Like, Not, Repository } from 'typeorm';
 import { PageView } from './entities/page-view.entity';
 import { UserInteraction } from './entities/user-interaction.entity';
+import { ContactMessage } from '../contact/entities/contact-message.entity';
 import { CreatePageViewDto } from './dto/create-page-view.dto';
 import { CreateInteractionDto } from './dto/create-interaction.dto';
 import { GetDashboardStatsDto } from './dto/get-dashboard-stats.dto';
@@ -48,7 +49,7 @@ type DashboardResponse = {
     pageViews: KpiMetric;
     interactions: KpiMetric;
     uniqueSessions: KpiMetric;
-    resourceDownloads: KpiMetric;
+    resourceOpens: KpiMetric;
     bookReads: KpiMetric;
     networksCreated: KpiMetric;
     contactSubmitted: KpiMetric;
@@ -79,6 +80,8 @@ export class StatsService {
     private readonly pageViewRepository: Repository<PageView>,
     @InjectRepository(UserInteraction)
     private readonly interactionRepository: Repository<UserInteraction>,
+    @InjectRepository(ContactMessage)
+    private readonly contactMessageRepository: Repository<ContactMessage>,
   ) {}
 
   async trackPageView(
@@ -91,14 +94,22 @@ export class StatsService {
       userAgent,
       ip,
     });
-    return this.pageViewRepository.save(pageView);
+    const savedPageView = await this.pageViewRepository.save(pageView);
+    this.invalidateDashboardCache();
+    return savedPageView;
   }
 
   async trackInteraction(
     createInteractionDto: CreateInteractionDto,
   ): Promise<UserInteraction> {
     const interaction = this.interactionRepository.create(createInteractionDto);
-    return this.interactionRepository.save(interaction);
+    const savedInteraction = await this.interactionRepository.save(interaction);
+    this.invalidateDashboardCache();
+    return savedInteraction;
+  }
+
+  invalidateDashboardCachePublic(): void {
+    this.invalidateDashboardCache();
   }
 
   async getOverview() {
@@ -112,7 +123,7 @@ export class StatsService {
       last7DaysViews,
       totalInteractions,
       bookReads,
-      resourceDownloads,
+      resourceOpens,
       networksCreated,
       topPages,
       interactionsByType,
@@ -124,9 +135,7 @@ export class StatsService {
       this.interactionRepository.count({
         where: { type: 'book_read' },
       }),
-      this.interactionRepository.count({
-        where: { type: 'resource_download' },
-      }),
+      this.countInteractionsByTypes(['resource_open', 'resource_download']),
       this.interactionRepository.count({
         where: { type: 'network_created' },
       }),
@@ -143,7 +152,7 @@ export class StatsService {
       interactions: {
         total: totalInteractions,
         bookReads,
-        resourceDownloads,
+        resourceOpens,
         networksCreated,
       },
       topPages,
@@ -164,8 +173,8 @@ export class StatsService {
       pageViewsPrevious,
       interactionsCurrent,
       interactionsPrevious,
-      resourceDownloadsCurrent,
-      resourceDownloadsPrevious,
+      resourceOpensCurrent,
+      resourceOpensPrevious,
       bookReadsCurrent,
       bookReadsPrevious,
       networksCreatedCurrent,
@@ -183,13 +192,13 @@ export class StatsService {
       this.countPageViews(range.previousStartDate, range.previousEndDate),
       this.countInteractions(range.startDate, range.endDate),
       this.countInteractions(range.previousStartDate, range.previousEndDate),
-      this.countInteractionsByType(
-        'resource_download',
+      this.countInteractionsByTypes(
+        ['resource_open', 'resource_download'],
         range.startDate,
         range.endDate,
       ),
-      this.countInteractionsByType(
-        'resource_download',
+      this.countInteractionsByTypes(
+        ['resource_open', 'resource_download'],
         range.previousStartDate,
         range.previousEndDate,
       ),
@@ -209,16 +218,8 @@ export class StatsService {
         range.previousStartDate,
         range.previousEndDate,
       ),
-      this.countInteractionsByType(
-        'contact_submitted',
-        range.startDate,
-        range.endDate,
-      ),
-      this.countInteractionsByType(
-        'contact_submitted',
-        range.previousStartDate,
-        range.previousEndDate,
-      ),
+      this.countContactMessages(range.startDate, range.endDate),
+      this.countContactMessages(range.previousStartDate, range.previousEndDate),
       this.countUniqueSessions(range.startDate, range.endDate),
       this.countUniqueSessions(range.previousStartDate, range.previousEndDate),
       this.getDailyPageViews(range.startDate, range.endDate),
@@ -251,9 +252,9 @@ export class StatsService {
           uniqueSessionsCurrent,
           uniqueSessionsPrevious,
         ),
-        resourceDownloads: this.buildKpi(
-          resourceDownloadsCurrent,
-          resourceDownloadsPrevious,
+        resourceOpens: this.buildKpi(
+          resourceOpensCurrent,
+          resourceOpensPrevious,
         ),
         bookReads: this.buildKpi(bookReadsCurrent, bookReadsPrevious),
         networksCreated: this.buildKpi(
@@ -361,12 +362,24 @@ export class StatsService {
     endDate?: Date,
   ): Promise<number> {
     if (startDate && endDate) {
-      return this.pageViewRepository.count({
-        where: {
-          createdAt: Between(startDate, endDate),
-          path: Not(Like('/admin%')),
-        },
-      });
+      const { startDateSql, endDateSql } = this.toSqlDateRange(
+        startDate,
+        endDate,
+      );
+
+      const rawRows = await this.pageViewRepository
+        .createQueryBuilder('pv')
+        .select('COUNT(*)', 'value')
+        .where('pv.createdAt BETWEEN :startDate AND :endDate', {
+          startDate: startDateSql,
+          endDate: endDateSql,
+        })
+        .andWhere('pv.path NOT LIKE :adminPath', {
+          adminPath: '/admin%',
+        })
+        .getRawOne<{ value?: string }>();
+
+      return Number.parseInt(rawRows?.value ?? '0', 10) || 0;
     }
 
     return this.pageViewRepository.count({
@@ -380,9 +393,18 @@ export class StatsService {
     startDate: Date,
     endDate: Date,
   ): Promise<number> {
-    return this.interactionRepository.count({
-      where: { createdAt: Between(startDate, endDate) },
-    });
+    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
+
+    const rawRow = await this.interactionRepository
+      .createQueryBuilder('ui')
+      .select('COUNT(*)', 'value')
+      .where('ui.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: startDateSql,
+        endDate: endDateSql,
+      })
+      .getRawOne<{ value?: string }>();
+
+    return Number.parseInt(rawRow?.value ?? '0', 10) || 0;
   }
 
   private async countInteractionsByType(
@@ -390,15 +412,79 @@ export class StatsService {
     startDate: Date,
     endDate: Date,
   ): Promise<number> {
+    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
+
+    const rawRow = await this.interactionRepository
+      .createQueryBuilder('ui')
+      .select('COUNT(*)', 'value')
+      .where('ui.type = :type', { type })
+      .andWhere('ui.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: startDateSql,
+        endDate: endDateSql,
+      })
+      .getRawOne<{ value?: string }>();
+
+    return Number.parseInt(rawRow?.value ?? '0', 10) || 0;
+  }
+
+  private async countInteractionsByTypes(
+    types: string[],
+    startDate?: Date,
+    endDate?: Date,
+  ): Promise<number> {
+    const normalizedTypes = types.map((value) => value.trim()).filter(Boolean);
+    if (!normalizedTypes.length) return 0;
+
+    if (startDate && endDate) {
+      const { startDateSql, endDateSql } = this.toSqlDateRange(
+        startDate,
+        endDate,
+      );
+
+      const rawRow = await this.interactionRepository
+        .createQueryBuilder('ui')
+        .select('COUNT(*)', 'value')
+        .where('ui.type IN (:...types)', {
+          types: normalizedTypes,
+        })
+        .andWhere('ui.createdAt BETWEEN :startDate AND :endDate', {
+          startDate: startDateSql,
+          endDate: endDateSql,
+        })
+        .getRawOne<{ value?: string }>();
+
+      return Number.parseInt(rawRow?.value ?? '0', 10) || 0;
+    }
+
     return this.interactionRepository.count({
-      where: { type, createdAt: Between(startDate, endDate) },
+      where: { type: In(normalizedTypes) },
     });
+  }
+
+  private async countContactMessages(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<number> {
+    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
+
+    const rawRow = await this.contactMessageRepository
+      .createQueryBuilder('cm')
+      .select('COUNT(*)', 'value')
+      .where('cm.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: startDateSql,
+        endDate: endDateSql,
+      })
+      .getRawOne<{ value?: string }>();
+
+    return Number.parseInt(rawRow?.value ?? '0', 10) || 0;
   }
 
   private async countUniqueSessions(
     startDate: Date,
     endDate: Date,
   ): Promise<number> {
+    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
+
     const rawRows: unknown = await this.pageViewRepository.query(
       `
         SELECT COUNT(*)::int AS value
@@ -415,7 +501,7 @@ export class StatsService {
             AND ui."sessionId" IS NOT NULL
         ) sessions
       `,
-      [startDate, endDate, '/admin%'],
+      [startDateSql, endDateSql, '/admin%'],
     );
 
     if (!Array.isArray(rawRows) || rawRows.length === 0) {
@@ -435,6 +521,7 @@ export class StatsService {
 
   private async getDailyPageViews(startDate: Date, endDate: Date) {
     const offsetMinutes = this.getBusinessTimezoneOffsetMinutes();
+    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
 
     const rows = await this.pageViewRepository
       .createQueryBuilder('pv')
@@ -444,8 +531,8 @@ export class StatsService {
       )
       .addSelect('COUNT(*)', 'value')
       .where('pv.createdAt BETWEEN :startDate AND :endDate', {
-        startDate,
-        endDate,
+        startDate: startDateSql,
+        endDate: endDateSql,
       })
       .andWhere('pv.path NOT LIKE :adminPath', {
         adminPath: '/admin%',
@@ -460,6 +547,7 @@ export class StatsService {
 
   private async getDailyInteractions(startDate: Date, endDate: Date) {
     const offsetMinutes = this.getBusinessTimezoneOffsetMinutes();
+    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
 
     const rows = await this.interactionRepository
       .createQueryBuilder('ui')
@@ -469,8 +557,8 @@ export class StatsService {
       )
       .addSelect('COUNT(*)', 'value')
       .where('ui.createdAt BETWEEN :startDate AND :endDate', {
-        startDate,
-        endDate,
+        startDate: startDateSql,
+        endDate: endDateSql,
       })
       .setParameter('offsetMinutes', offsetMinutes)
       .groupBy('date')
@@ -545,9 +633,13 @@ export class StatsService {
       });
 
     if (startDate && endDate) {
-      query.andWhere('pv.createdAt BETWEEN :startDate AND :endDate', {
+      const { startDateSql, endDateSql } = this.toSqlDateRange(
         startDate,
         endDate,
+      );
+      query.andWhere('pv.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: startDateSql,
+        endDate: endDateSql,
       });
     }
 
@@ -574,9 +666,13 @@ export class StatsService {
       .addSelect('COUNT(*)', 'count');
 
     if (startDate && endDate) {
-      query.where('ui.createdAt BETWEEN :startDate AND :endDate', {
+      const { startDateSql, endDateSql } = this.toSqlDateRange(
         startDate,
         endDate,
+      );
+      query.where('ui.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: startDateSql,
+        endDate: endDateSql,
       });
     }
 
@@ -688,6 +784,10 @@ export class StatsService {
     }
   }
 
+  private invalidateDashboardCache(): void {
+    this.dashboardCache.clear();
+  }
+
   private toBusinessDateKey(value: string): string {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
     if (match) {
@@ -741,5 +841,16 @@ export class StatsService {
   private dateKeyToUtcMidnight(dateKey: string): Date {
     const [year, month, day] = this.parseDateKey(dateKey);
     return new Date(Date.UTC(year, month - 1, day));
+  }
+
+  private toSqlTimestamp(date: Date): string {
+    return date.toISOString().replace('T', ' ').replace('Z', '');
+  }
+
+  private toSqlDateRange(startDate: Date, endDate: Date) {
+    return {
+      startDateSql: this.toSqlTimestamp(startDate),
+      endDateSql: this.toSqlTimestamp(endDate),
+    };
   }
 }

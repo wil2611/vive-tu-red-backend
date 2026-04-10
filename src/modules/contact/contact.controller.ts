@@ -22,7 +22,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
-import { ContactMessageStatus } from './entities';
+import { Throttle } from '@nestjs/throttler';
 
 type AuthenticatedRequest = Request & {
   user: { id: string; email: string; role: UserRole };
@@ -37,6 +37,12 @@ export class ContactController {
   }
 
   @Post()
+  @Throttle({
+    default: {
+      ttl: 60_000,
+      limit: 8,
+    },
+  })
   async create(
     @Body() createContactMessageDto: CreateContactMessageDto,
     @Headers('user-agent') userAgent: string,
@@ -46,34 +52,6 @@ export class ContactController {
       ip: req.ip,
       userAgent,
     });
-  }
-
-  @Get('admin/all')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
-  async findAll(@Req() req: AuthenticatedRequest) {
-    const result = await this.contactService.listAdminMessages(
-      { page: 1, limit: 200 },
-      this.canSeeSensitiveMetadata(req),
-    );
-
-    return result.items;
-  }
-
-  @Get('admin/unread')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
-  async findUnread(@Req() req: AuthenticatedRequest) {
-    const result = await this.contactService.listAdminMessages(
-      {
-        page: 1,
-        limit: 200,
-        status: ContactMessageStatus.NEW,
-      },
-      this.canSeeSensitiveMetadata(req),
-    );
-
-    return result.items;
   }
 
   @Get('admin/messages')

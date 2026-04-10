@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 export enum ContactMessageStatus {
@@ -14,6 +15,9 @@ export enum ContactMessageStatus {
 }
 
 @Entity('contact_messages')
+@Index('IDX_contact_messages_created_at', ['createdAt'])
+@Index('IDX_contact_messages_status_created_at', ['status', 'createdAt'])
+@Index('IDX_contact_messages_email', ['email'])
 export class ContactMessage {
   @PrimaryGeneratedColumn('uuid')
   id: string;

@@ -8,6 +8,7 @@ import {
 
 export enum InteractionType {
   BOOK_READ = 'book_read',
+  RESOURCE_OPEN = 'resource_open',
   RESOURCE_DOWNLOAD = 'resource_download',
   NETWORK_CREATED = 'network_created',
   CONTACT_SUBMITTED = 'contact_submitted',
