@@ -15,6 +15,7 @@ import { StatsModule } from './modules/stats/stats.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { TeamModule } from './modules/team/team.module';
 import { AlliesModule } from './modules/allies/allies.module';
+import { NewsModule } from './modules/news/news.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { AlliesModule } from './modules/allies/allies.module';
     SupportModule,
     TeamModule,
     AlliesModule,
+    NewsModule,
     NetworkModule,
     StatsModule,
     ContactModule,
