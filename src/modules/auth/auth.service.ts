@@ -45,11 +45,12 @@ export class AuthService {
   private getCookieBaseOptions(maxAgeMs: number) {
     const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
     const isProduction = nodeEnv === 'production';
+    const sameSite = isProduction ? ('none' as const) : ('lax' as const);
 
     return {
       httpOnly: true,
       secure: isProduction,
-      sameSite: 'lax' as const,
+      sameSite,
       path: '/',
       maxAge: maxAgeMs,
     };
