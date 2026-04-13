@@ -1,0 +1,5 @@
+export const TEAM_NAME_MAX_LENGTH = 255;
+export const TEAM_DEPARTMENT_MAX_LENGTH = 255;
+export const TEAM_DIVISION_MAX_LENGTH = 255;
+export const TEAM_PHOTO_MAX_LENGTH = 2048;
+export const TEAM_PROFILE_MAX_LENGTH = 5000;

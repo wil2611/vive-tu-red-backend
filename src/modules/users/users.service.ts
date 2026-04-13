@@ -1,0 +1,415 @@
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
+import { User } from './entities/user.entity';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateMyProfileDto } from './dto/update-my-profile.dto';
+import { UserRole } from '../../common/enums/user-role.enum';
+import { revokeAccessTokensForUser } from '../../common/security/access-token-revocation';
+
+type SafeUser = Omit<User, 'password' | 'refreshToken'>;
+const PASSWORD_MIN_LENGTH = 10;
+
+@Injectable()
+export class UsersService {
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) {}
+
+  private sanitizeUser(user: User): SafeUser {
+    const safeUser: Partial<User> = { ...user };
+    delete safeUser.password;
+    delete safeUser.refreshToken;
+    return safeUser as SafeUser;
+  }
+
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
+  private hasStrongPassword(password: string): boolean {
+    const hasLetter = /[A-Za-z]/.test(password);
+    const hasNumber = /\d/.test(password);
+    return password.length >= PASSWORD_MIN_LENGTH && hasLetter && hasNumber;
+  }
+
+  private async findByEmailInsensitive(email: string): Promise<User | null> {
+    const normalizedEmail = this.normalizeEmail(email);
+    return this.userRepository
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = :normalizedEmail', { normalizedEmail })
+      .getOne();
+  }
+
+  private async countActiveAdmins(): Promise<number> {
+    return this.userRepository.count({
+      where: {
+        role: UserRole.ADMIN,
+        isActive: true,
+      },
+    });
+  }
+
+  private async ensureAtLeastOneActiveAdmin(
+    user: User,
+    nextRole: UserRole,
+    nextIsActive: boolean,
+  ): Promise<void> {
+    const isCurrentlyActiveAdmin =
+      user.role === UserRole.ADMIN && user.isActive === true;
+    const willRemainActiveAdmin =
+      nextRole === UserRole.ADMIN && nextIsActive === true;
+
+    if (!isCurrentlyActiveAdmin || willRemainActiveAdmin) {
+      return;
+    }
+
+    const activeAdmins = await this.countActiveAdmins();
+    if (activeAdmins <= 1) {
+      throw new BadRequestException(
+        'Debe existir al menos un administrador activo',
+      );
+    }
+  }
+
+  async create(createUserDto: CreateUserDto): Promise<SafeUser> {
+    const normalizedEmail = this.normalizeEmail(createUserDto.email);
+    const normalizedFirstName = createUserDto.firstName.trim();
+    const normalizedLastName = createUserDto.lastName.trim();
+    const existingUser = await this.findByEmailInsensitive(normalizedEmail);
+
+    if (existingUser) {
+      throw new ConflictException('El email ya esta registrado');
+    }
+
+    if (!normalizedFirstName) {
+      throw new BadRequestException('El nombre no puede estar vacio');
+    }
+
+    if (!normalizedLastName) {
+      throw new BadRequestException('El apellido no puede estar vacio');
+    }
+
+    if (!this.hasStrongPassword(createUserDto.password)) {
+      throw new BadRequestException(
+        `La contrasena debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres, una letra y un numero`,
+      );
+    }
+
+    const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
+
+    const user = this.userRepository.create({
+      ...createUserDto,
+      email: normalizedEmail,
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
+      password: hashedPassword,
+    });
+
+    return this.sanitizeUser(await this.userRepository.save(user));
+  }
+
+  async findAll(): Promise<SafeUser[]> {
+    const users = await this.userRepository.find();
+    return users.map((user) => this.sanitizeUser(user));
+  }
+
+  async findById(id: string): Promise<User | null> {
+    return this.userRepository.findOne({ where: { id } });
+  }
+
+  async findSafeById(id: string): Promise<SafeUser> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    return this.sanitizeUser(user);
+  }
+
+  async findByEmail(email: string): Promise<User | null> {
+    return this.findByEmailInsensitive(email);
+  }
+
+  async findSafeActiveById(id: string): Promise<SafeUser> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedException('Usuario desactivado');
+    }
+    return this.sanitizeUser(user);
+  }
+
+  async updateMyProfile(
+    userId: string,
+    updateMyProfileDto: UpdateMyProfileDto,
+  ): Promise<SafeUser> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Usuario desactivado');
+    }
+
+    const normalizedEmail =
+      typeof updateMyProfileDto.email === 'string'
+        ? this.normalizeEmail(updateMyProfileDto.email)
+        : undefined;
+    const normalizedFirstName =
+      typeof updateMyProfileDto.firstName === 'string'
+        ? updateMyProfileDto.firstName.trim()
+        : undefined;
+    const normalizedLastName =
+      typeof updateMyProfileDto.lastName === 'string'
+        ? updateMyProfileDto.lastName.trim()
+        : undefined;
+
+    if (normalizedEmail !== undefined && normalizedEmail.length === 0) {
+      throw new BadRequestException('El email no puede estar vacio');
+    }
+
+    if (normalizedFirstName !== undefined && normalizedFirstName.length === 0) {
+      throw new BadRequestException('El nombre no puede estar vacio');
+    }
+
+    if (normalizedLastName !== undefined && normalizedLastName.length === 0) {
+      throw new BadRequestException('El apellido no puede estar vacio');
+    }
+
+    const currentEmailNormalized = this.normalizeEmail(user.email);
+    if (normalizedEmail && normalizedEmail !== currentEmailNormalized) {
+      const userWithSameEmail =
+        await this.findByEmailInsensitive(normalizedEmail);
+      if (userWithSameEmail && userWithSameEmail.id !== user.id) {
+        throw new ConflictException('El email ya esta registrado');
+      }
+    }
+
+    if (normalizedEmail !== undefined) {
+      user.email = normalizedEmail;
+    }
+
+    if (normalizedFirstName !== undefined) {
+      user.firstName = normalizedFirstName;
+    }
+
+    if (normalizedLastName !== undefined) {
+      user.lastName = normalizedLastName;
+    }
+
+    return this.sanitizeUser(await this.userRepository.save(user));
+  }
+
+  async update(
+    id: string,
+    updateUserDto: UpdateUserDto,
+    actorUserId: string,
+  ): Promise<SafeUser> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (actorUserId === id) {
+      if (updateUserDto.isActive === false) {
+        throw new BadRequestException('No puedes desactivar tu propio usuario');
+      }
+
+      if (
+        updateUserDto.role !== undefined &&
+        updateUserDto.role !== user.role
+      ) {
+        throw new BadRequestException(
+          'No puedes cambiar tu propio rol desde esta seccion',
+        );
+      }
+    }
+
+    const normalizedEmail =
+      typeof updateUserDto.email === 'string'
+        ? this.normalizeEmail(updateUserDto.email)
+        : undefined;
+    const normalizedFirstName =
+      typeof updateUserDto.firstName === 'string'
+        ? updateUserDto.firstName.trim()
+        : undefined;
+    const normalizedLastName =
+      typeof updateUserDto.lastName === 'string'
+        ? updateUserDto.lastName.trim()
+        : undefined;
+
+    if (normalizedEmail !== undefined && normalizedEmail.length === 0) {
+      throw new BadRequestException('El email no puede estar vacio');
+    }
+
+    if (normalizedFirstName !== undefined && normalizedFirstName.length === 0) {
+      throw new BadRequestException('El nombre no puede estar vacio');
+    }
+
+    if (normalizedLastName !== undefined && normalizedLastName.length === 0) {
+      throw new BadRequestException('El apellido no puede estar vacio');
+    }
+
+    if (
+      normalizedEmail &&
+      normalizedEmail !== this.normalizeEmail(user.email)
+    ) {
+      const userWithSameEmail =
+        await this.findByEmailInsensitive(normalizedEmail);
+      if (userWithSameEmail && userWithSameEmail.id !== user.id) {
+        throw new ConflictException('El email ya esta registrado');
+      }
+    }
+
+    const nextRole = updateUserDto.role ?? user.role;
+    const nextIsActive = updateUserDto.isActive ?? user.isActive;
+    await this.ensureAtLeastOneActiveAdmin(user, nextRole, nextIsActive);
+
+    const normalizedPassword =
+      typeof updateUserDto.password === 'string'
+        ? updateUserDto.password.trim()
+        : undefined;
+
+    if (normalizedPassword !== undefined) {
+      if (!this.hasStrongPassword(normalizedPassword)) {
+        throw new BadRequestException(
+          `La contrasena debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres, una letra y un numero`,
+        );
+      }
+    }
+
+    const hashedPassword = normalizedPassword
+      ? await bcrypt.hash(normalizedPassword, 10)
+      : undefined;
+
+    if (normalizedFirstName !== undefined) {
+      user.firstName = normalizedFirstName;
+    }
+    if (normalizedLastName !== undefined) {
+      user.lastName = normalizedLastName;
+    }
+    if (updateUserDto.role !== undefined) {
+      user.role = updateUserDto.role;
+    }
+    if (updateUserDto.isActive !== undefined) {
+      user.isActive = updateUserDto.isActive;
+    }
+    if (hashedPassword) {
+      user.password = hashedPassword;
+      user.refreshToken = null;
+      revokeAccessTokensForUser(user.id);
+    }
+    if (normalizedEmail !== undefined) {
+      user.email = normalizedEmail;
+    }
+    return this.sanitizeUser(await this.userRepository.save(user));
+  }
+
+  async remove(id: string, actorUserId: string): Promise<{ message: string }> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (actorUserId === id) {
+      throw new BadRequestException('No puedes eliminar tu propio usuario');
+    }
+
+    await this.ensureAtLeastOneActiveAdmin(user, user.role, false);
+
+    await this.userRepository.remove(user);
+    return { message: 'Usuario eliminado exitosamente' };
+  }
+
+  async updateRefreshToken(
+    userId: string,
+    refreshToken: string | null,
+  ): Promise<void> {
+    const hashedRefreshToken = refreshToken
+      ? await bcrypt.hash(refreshToken, 10)
+      : null;
+
+    await this.userRepository.update(userId, {
+      refreshToken: hashedRefreshToken,
+    });
+  }
+
+  async resetPassword(
+    id: string,
+    newPassword: string,
+  ): Promise<{ message: string }> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const normalizedPassword = newPassword?.trim();
+    if (!normalizedPassword || !this.hasStrongPassword(normalizedPassword)) {
+      throw new BadRequestException(
+        `La contrasena debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres, una letra y un numero`,
+      );
+    }
+
+    user.password = await bcrypt.hash(normalizedPassword, 10);
+    user.refreshToken = null;
+    revokeAccessTokensForUser(user.id);
+    await this.userRepository.save(user);
+    return { message: 'Contrasena actualizada exitosamente' };
+  }
+
+  async changeMyPassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ message: string }> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Usuario desactivado');
+    }
+
+    const normalizedNewPassword = newPassword?.trim();
+    if (!normalizedNewPassword || !this.hasStrongPassword(normalizedNewPassword)) {
+      throw new BadRequestException(
+        `La contrasena debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres, una letra y un numero`,
+      );
+    }
+
+    if (currentPassword === normalizedNewPassword) {
+      throw new BadRequestException(
+        'La nueva contrasena debe ser diferente a la actual',
+      );
+    }
+
+    const isCurrentPasswordValid = await bcrypt.compare(
+      currentPassword,
+      user.password,
+    );
+
+    if (!isCurrentPasswordValid) {
+      throw new UnauthorizedException('La contrasena actual no es valida');
+    }
+
+    user.password = await bcrypt.hash(normalizedNewPassword, 10);
+    user.refreshToken = null;
+    revokeAccessTokensForUser(user.id);
+    await this.userRepository.save(user);
+
+    return { message: 'Contrasena actualizada exitosamente' };
+  }
+}
