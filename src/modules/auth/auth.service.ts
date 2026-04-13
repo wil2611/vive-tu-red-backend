@@ -44,13 +44,16 @@ export class AuthService {
 
   private getCookieBaseOptions(maxAgeMs: number) {
     const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
-    const isProduction = nodeEnv === 'production';
+    const vercelEnv = this.configService.get<string>('VERCEL_ENV', '');
+    const isProduction = nodeEnv === 'production' || Boolean(vercelEnv);
     const sameSite = isProduction ? ('none' as const) : ('lax' as const);
+    const usePartitionedCookies = isProduction;
 
     return {
       httpOnly: true,
       secure: isProduction,
       sameSite,
+      partitioned: usePartitionedCookies,
       path: '/',
       maxAge: maxAgeMs,
     };
