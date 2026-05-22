@@ -12,6 +12,7 @@ import { TeamService } from './team.service';
 import { CreateTeamMemberDto } from './dto/create-team-member.dto';
 import { UpdateTeamMemberDto } from './dto/update-team-member.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -26,14 +27,14 @@ export class TeamController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async create(@Body() createTeamMemberDto: CreateTeamMemberDto) {
     return this.teamService.create(createTeamMemberDto);
   }
 
   @Get('admin/all')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async findAll() {
     return this.teamService.findAll();
@@ -45,7 +46,7 @@ export class TeamController {
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async update(
     @Param('id') id: string,
@@ -55,7 +56,7 @@ export class TeamController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async remove(@Param('id') id: string) {
     return this.teamService.remove(id);

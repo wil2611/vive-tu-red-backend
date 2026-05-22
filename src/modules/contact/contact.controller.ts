@@ -19,6 +19,7 @@ import {
   UpdateContactMessageStatusDto,
 } from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -55,7 +56,7 @@ export class ContactController {
   }
 
   @Get('admin/messages')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
   async listAdminMessages(
     @Req() req: AuthenticatedRequest,
@@ -68,7 +69,7 @@ export class ContactController {
   }
 
   @Patch('admin/:id/read')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
   async markAsRead(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.contactService.markAsRead(
@@ -78,7 +79,7 @@ export class ContactController {
   }
 
   @Patch('admin/:id/status')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.INVESTIGADOR)
   async updateStatus(
     @Param('id') id: string,
@@ -93,7 +94,7 @@ export class ContactController {
   }
 
   @Delete('admin/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async remove(@Param('id') id: string) {
     return this.contactService.remove(id);

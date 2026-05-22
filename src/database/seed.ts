@@ -1,4 +1,5 @@
 import { DataSource } from 'typeorm';
+import type { QueryRunner } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import * as dotenv from 'dotenv';
 
@@ -32,6 +33,26 @@ type ProjectAllySample = {
   participationScope: string;
   isActive: boolean;
 };
+
+type ExistingRow = {
+  id: string;
+};
+
+const ADMIN_PASSWORD_MIN_LENGTH = 10;
+
+function getRequiredEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+function hasStrongPassword(password: string): boolean {
+  const hasLetter = /[A-Za-z]/.test(password);
+  const hasNumber = /\d/.test(password);
+  return password.length >= ADMIN_PASSWORD_MIN_LENGTH && hasLetter && hasNumber;
+}
 
 const SUPPORT_PATH_SAMPLES: SupportPathSample[] = [
   {
@@ -89,46 +110,45 @@ const PROJECT_ALLY_SAMPLES: ProjectAllySample[] = [
   },
 ];
 
-async function seedAdmin(
-  queryRunner: ReturnType<DataSource['createQueryRunner']>,
-) {
-  const existingAdmin = await queryRunner.query(
-    `SELECT id FROM users WHERE role = 'admin' LIMIT 1`,
-  );
+async function seedAdmin(queryRunner: QueryRunner) {
+  const existingAdmin = (await queryRunner.query(
+    `SELECT id FROM users WHERE role = 'admin' AND "isActive" = true LIMIT 1`,
+  )) as ExistingRow[];
 
   if (existingAdmin.length > 0) {
-    console.log('Ya existe un usuario administrador');
+    console.log('Ya existe un usuario administrador activo');
     return;
   }
 
-  const hashedPassword = await bcrypt.hash('admin123', 10);
+  const adminEmail = getRequiredEnv('SEED_ADMIN_EMAIL').toLowerCase();
+  const adminPassword = getRequiredEnv('SEED_ADMIN_PASSWORD');
+  const adminFirstName = process.env.SEED_ADMIN_FIRST_NAME?.trim() || 'Admin';
+  const adminLastName = process.env.SEED_ADMIN_LAST_NAME?.trim() || 'ViveTuRed';
+
+  if (!hasStrongPassword(adminPassword)) {
+    throw new Error(
+      `SEED_ADMIN_PASSWORD must have at least ${ADMIN_PASSWORD_MIN_LENGTH} characters, one letter and one number.`,
+    );
+  }
+
+  const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
   await queryRunner.query(
     `INSERT INTO users ("email", "password", "firstName", "lastName", "role", "isActive")
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [
-      'admin@vivetured.com',
-      hashedPassword,
-      'Admin',
-      'ViveTuRed',
-      'admin',
-      true,
-    ],
+    [adminEmail, hashedPassword, adminFirstName, adminLastName, 'admin', true],
   );
 
   console.log('Usuario administrador creado exitosamente');
-  console.log('Email: admin@vivetured.com');
-  console.log('Password: admin123');
+  console.log(`Email: ${adminEmail}`);
 }
 
-async function seedSupportPaths(
-  queryRunner: ReturnType<DataSource['createQueryRunner']>,
-) {
+async function seedSupportPaths(queryRunner: QueryRunner) {
   for (const sample of SUPPORT_PATH_SAMPLES) {
-    const existing = await queryRunner.query(
+    const existing = (await queryRunner.query(
       `SELECT id FROM support_paths WHERE "institutionName" = $1 LIMIT 1`,
       [sample.institutionName],
-    );
+    )) as ExistingRow[];
 
     if (existing.length > 0) {
       continue;
@@ -159,14 +179,12 @@ async function seedSupportPaths(
   console.log('Se verificaron 3 rutas de atencion de ejemplo');
 }
 
-async function seedProjectAllies(
-  queryRunner: ReturnType<DataSource['createQueryRunner']>,
-) {
+async function seedProjectAllies(queryRunner: QueryRunner) {
   for (const sample of PROJECT_ALLY_SAMPLES) {
-    const existing = await queryRunner.query(
+    const existing = (await queryRunner.query(
       `SELECT id FROM project_allies WHERE "institutionName" = $1 AND "type" = $2 LIMIT 1`,
       [sample.institutionName, sample.type],
-    );
+    )) as ExistingRow[];
 
     if (existing.length > 0) {
       continue;
@@ -207,9 +225,10 @@ async function seed() {
     await seedProjectAllies(queryRunner);
   } catch (error) {
     console.error('Error al crear el seed:', error);
+    process.exitCode = 1;
   } finally {
     await AppDataSource.destroy();
   }
 }
 
-seed();
+void seed();

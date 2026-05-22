@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Body,
   UseGuards,
@@ -12,6 +13,7 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { CsrfGuard } from './guards/csrf.guard';
 import type { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { REFRESH_TOKEN_COOKIE_NAME, readCookieValue } from './auth-cookie.util';
@@ -19,6 +21,12 @@ import { REFRESH_TOKEN_COOKIE_NAME, readCookieValue } from './auth-cookie.util';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Get('csrf')
+  @HttpCode(HttpStatus.OK)
+  getCsrfToken(@Res({ passthrough: true }) response: Response) {
+    return this.authService.issueCsrfToken(response);
+  }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -75,7 +83,7 @@ export class AuthController {
     };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @Throttle({
