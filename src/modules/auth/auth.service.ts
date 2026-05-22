@@ -6,6 +6,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import type { Response } from 'express';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
@@ -16,6 +17,7 @@ import {
 } from '../../common/security/access-token-revocation';
 import {
   ACCESS_TOKEN_COOKIE_NAME,
+  CSRF_TOKEN_COOKIE_NAME,
   REFRESH_TOKEN_COOKIE_NAME,
 } from './auth-cookie.util';
 
@@ -42,7 +44,7 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  private getCookieBaseOptions(maxAgeMs: number) {
+  private getCookieBaseOptions(maxAgeMs: number, httpOnly = true) {
     const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
     const vercelEnv = this.configService.get<string>('VERCEL_ENV', '');
     const isProduction = nodeEnv === 'production' || Boolean(vercelEnv);
@@ -50,7 +52,7 @@ export class AuthService {
     const usePartitionedCookies = isProduction;
 
     return {
-      httpOnly: true,
+      httpOnly,
       secure: isProduction,
       sameSite,
       partitioned: usePartitionedCookies,
@@ -93,6 +95,20 @@ export class AuthService {
     const options = this.getCookieBaseOptions(0);
     response.clearCookie(ACCESS_TOKEN_COOKIE_NAME, options);
     response.clearCookie(REFRESH_TOKEN_COOKIE_NAME, options);
+    response.clearCookie(CSRF_TOKEN_COOKIE_NAME, options);
+  }
+
+  issueCsrfToken(response: Response): { csrfToken: string } {
+    const csrfToken = randomBytes(32).toString('base64url');
+    const maxAgeMs = 24 * 60 * 60 * 1000;
+
+    response.cookie(
+      CSRF_TOKEN_COOKIE_NAME,
+      csrfToken,
+      this.getCookieBaseOptions(maxAgeMs, false),
+    );
+
+    return { csrfToken };
   }
 
   async login(loginDto: LoginDto): Promise<AuthLoginResult> {

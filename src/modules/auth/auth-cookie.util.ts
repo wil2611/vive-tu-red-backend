@@ -1,5 +1,7 @@
 export const ACCESS_TOKEN_COOKIE_NAME = 'vtr_access';
 export const REFRESH_TOKEN_COOKIE_NAME = 'vtr_refresh';
+export const CSRF_TOKEN_COOKIE_NAME = 'vtr_csrf';
+export const CSRF_TOKEN_HEADER_NAME = 'x-csrf-token';
 
 function splitCookieHeader(rawCookieHeader?: string): string[] {
   if (!rawCookieHeader) return [];

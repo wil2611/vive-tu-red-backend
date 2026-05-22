@@ -18,6 +18,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateMyProfileDto } from './dto/update-my-profile.dto';
 import { ChangeMyPasswordDto } from './dto/change-my-password.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -27,7 +28,7 @@ type AuthenticatedRequest = Request & {
 };
 
 @Controller('users')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 

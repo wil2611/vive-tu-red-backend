@@ -14,6 +14,7 @@ import { UpdateStoryDto } from './dto/update-story.dto';
 import { CreateChapterDto } from './dto/create-chapter.dto';
 import { UpdateChapterDto } from './dto/update-chapter.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -47,14 +48,14 @@ export class StoriesController {
   // ── Endpoints protegidos (admin/editor) ──────────────
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async create(@Body() createStoryDto: CreateStoryDto) {
     return this.storiesService.createStory(createStoryDto);
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async update(
     @Param('id') id: string,
@@ -64,7 +65,7 @@ export class StoriesController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async remove(@Param('id') id: string) {
     return this.storiesService.removeStory(id);
@@ -73,14 +74,14 @@ export class StoriesController {
   // ── Chapters protegidos ──────────────────────────────
 
   @Post('chapters')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async createChapter(@Body() createChapterDto: CreateChapterDto) {
     return this.storiesService.createChapter(createChapterDto);
   }
 
   @Put('chapters/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async updateChapter(
     @Param('id') id: string,
@@ -90,7 +91,7 @@ export class StoriesController {
   }
 
   @Delete('chapters/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async removeChapter(@Param('id') id: string) {
     return this.storiesService.removeChapter(id);

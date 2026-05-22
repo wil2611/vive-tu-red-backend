@@ -12,6 +12,7 @@ import { SupportService } from './support.service';
 import { CreateSupportPathDto } from './dto/create-support-path.dto';
 import { UpdateSupportPathDto } from './dto/update-support-path.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
@@ -35,21 +36,21 @@ export class SupportController {
   // ── Endpoints protegidos ─────────────────────────────
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async create(@Body() createSupportPathDto: CreateSupportPathDto) {
     return this.supportService.create(createSupportPathDto);
   }
 
   @Get('admin/all')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async findAll() {
     return this.supportService.findAll();
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async update(
     @Param('id') id: string,
@@ -59,7 +60,7 @@ export class SupportController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async remove(@Param('id') id: string) {
     return this.supportService.remove(id);
