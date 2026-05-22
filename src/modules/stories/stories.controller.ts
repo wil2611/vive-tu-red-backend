@@ -30,6 +30,11 @@ export class StoriesController {
     return this.storiesService.findPublishedStories();
   }
 
+  @Get('chapters/:id')
+  async findChapter(@Param('id') id: string) {
+    return this.storiesService.findPublishedChapterById(id);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.storiesService.findPublishedStoryById(id);
@@ -38,11 +43,6 @@ export class StoriesController {
   @Get(':id/chapters')
   async findChapters(@Param('id') id: string) {
     return this.storiesService.findPublishedChaptersByStory(id);
-  }
-
-  @Get('chapters/:id')
-  async findChapter(@Param('id') id: string) {
-    return this.storiesService.findPublishedChapterById(id);
   }
 
   // ── Endpoints protegidos (admin/editor) ──────────────

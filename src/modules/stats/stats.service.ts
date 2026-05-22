@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, In, Like, Not, Repository } from 'typeorm';
+import { In, Like, Not, Repository } from 'typeorm';
 import { PageView } from './entities/page-view.entity';
 import { UserInteraction } from './entities/user-interaction.entity';
 import { ContactMessage } from '../contact/entities/contact-message.entity';
@@ -69,6 +69,8 @@ export class StatsService {
   private static readonly BUSINESS_TIMEZONE_OFFSET_MINUTES = 300;
   private static readonly DASHBOARD_CACHE_TTL_MS = 45_000;
   private static readonly DASHBOARD_CACHE_MAX_ENTRIES = 100;
+  private static readonly METADATA_MAX_KEYS = 8;
+  private static readonly METADATA_STRING_MAX_LENGTH = 120;
 
   private readonly dashboardCache = new Map<
     string,
@@ -102,10 +104,43 @@ export class StatsService {
   async trackInteraction(
     createInteractionDto: CreateInteractionDto,
   ): Promise<UserInteraction> {
-    const interaction = this.interactionRepository.create(createInteractionDto);
+    const interaction = this.interactionRepository.create({
+      ...createInteractionDto,
+      metadata: this.sanitizeInteractionMetadata(createInteractionDto.metadata),
+    });
     const savedInteraction = await this.interactionRepository.save(interaction);
     this.invalidateDashboardCache();
     return savedInteraction;
+  }
+
+  private sanitizeInteractionMetadata(
+    metadata: Record<string, unknown> | undefined,
+  ): Record<string, string | number | boolean | null> | undefined {
+    if (!metadata) return undefined;
+
+    const sanitized: Record<string, string | number | boolean | null> = {};
+    const entries = Object.entries(metadata).slice(
+      0,
+      StatsService.METADATA_MAX_KEYS,
+    );
+
+    for (const [rawKey, rawValue] of entries) {
+      const key = rawKey.trim().slice(0, 40);
+      if (!key) continue;
+
+      if (typeof rawValue === 'string') {
+        sanitized[key] = rawValue.slice(
+          0,
+          StatsService.METADATA_STRING_MAX_LENGTH,
+        );
+      } else if (typeof rawValue === 'number') {
+        sanitized[key] = Number.isFinite(rawValue) ? rawValue : null;
+      } else if (typeof rawValue === 'boolean' || rawValue === null) {
+        sanitized[key] = rawValue;
+      }
+    }
+
+    return Object.keys(sanitized).length ? sanitized : undefined;
   }
 
   invalidateDashboardCachePublic(): void {
@@ -393,7 +428,10 @@ export class StatsService {
     startDate: Date,
     endDate: Date,
   ): Promise<number> {
-    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
+    const { startDateSql, endDateSql } = this.toSqlDateRange(
+      startDate,
+      endDate,
+    );
 
     const rawRow = await this.interactionRepository
       .createQueryBuilder('ui')
@@ -412,7 +450,10 @@ export class StatsService {
     startDate: Date,
     endDate: Date,
   ): Promise<number> {
-    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
+    const { startDateSql, endDateSql } = this.toSqlDateRange(
+      startDate,
+      endDate,
+    );
 
     const rawRow = await this.interactionRepository
       .createQueryBuilder('ui')
@@ -465,7 +506,10 @@ export class StatsService {
     startDate: Date,
     endDate: Date,
   ): Promise<number> {
-    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
+    const { startDateSql, endDateSql } = this.toSqlDateRange(
+      startDate,
+      endDate,
+    );
 
     const rawRow = await this.contactMessageRepository
       .createQueryBuilder('cm')
@@ -483,7 +527,10 @@ export class StatsService {
     startDate: Date,
     endDate: Date,
   ): Promise<number> {
-    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
+    const { startDateSql, endDateSql } = this.toSqlDateRange(
+      startDate,
+      endDate,
+    );
 
     const rawRows: unknown = await this.pageViewRepository.query(
       `
@@ -521,7 +568,10 @@ export class StatsService {
 
   private async getDailyPageViews(startDate: Date, endDate: Date) {
     const offsetMinutes = this.getBusinessTimezoneOffsetMinutes();
-    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
+    const { startDateSql, endDateSql } = this.toSqlDateRange(
+      startDate,
+      endDate,
+    );
 
     const rows = await this.pageViewRepository
       .createQueryBuilder('pv')
@@ -547,7 +597,10 @@ export class StatsService {
 
   private async getDailyInteractions(startDate: Date, endDate: Date) {
     const offsetMinutes = this.getBusinessTimezoneOffsetMinutes();
-    const { startDateSql, endDateSql } = this.toSqlDateRange(startDate, endDate);
+    const { startDateSql, endDateSql } = this.toSqlDateRange(
+      startDate,
+      endDate,
+    );
 
     const rows = await this.interactionRepository
       .createQueryBuilder('ui')
