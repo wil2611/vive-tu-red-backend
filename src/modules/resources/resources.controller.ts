@@ -34,6 +34,13 @@ export class ResourcesController {
     return this.resourcesService.findPublished();
   }
 
+  @Get('admin/all')
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async findAll() {
+    return this.resourcesService.findAll();
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.resourcesService.findPublishedById(id);
@@ -64,13 +71,6 @@ export class ResourcesController {
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async create(@Body() createResourceDto: CreateResourceDto) {
     return this.resourcesService.create(createResourceDto);
-  }
-
-  @Get('admin/all')
-  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR)
-  async findAll() {
-    return this.resourcesService.findAll();
   }
 
   @Put(':id')

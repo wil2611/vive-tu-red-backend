@@ -4,7 +4,9 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  MaxLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export enum InteractionType {
   BOOK_READ = 'book_read',
@@ -14,6 +16,12 @@ export enum InteractionType {
   CONTACT_SUBMITTED = 'contact_submitted',
 }
 
+const normalizeOptionalString = ({ value }: { value: unknown }): unknown => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 export class CreateInteractionDto {
   @IsEnum(InteractionType)
   @IsNotEmpty()
@@ -21,10 +29,14 @@ export class CreateInteractionDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(120)
+  @Transform(normalizeOptionalString)
   targetId?: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(40)
+  @Transform(normalizeOptionalString)
   targetType?: string;
 
   @IsObject()
@@ -33,5 +45,7 @@ export class CreateInteractionDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(80)
+  @Transform(normalizeOptionalString)
   sessionId?: string;
 }

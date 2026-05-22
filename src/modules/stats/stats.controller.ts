@@ -17,6 +17,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums/user-role.enum';
 import type { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('stats')
 export class StatsController {
@@ -25,6 +26,12 @@ export class StatsController {
   // ── Endpoints públicos (tracking) ────────────────────
 
   @Post('page-view')
+  @Throttle({
+    default: {
+      ttl: 60_000,
+      limit: 30,
+    },
+  })
   async trackPageView(
     @Body() createPageViewDto: CreatePageViewDto,
     @Headers('user-agent') userAgent: string,
@@ -35,6 +42,12 @@ export class StatsController {
   }
 
   @Post('interaction')
+  @Throttle({
+    default: {
+      ttl: 60_000,
+      limit: 20,
+    },
+  })
   async trackInteraction(@Body() createInteractionDto: CreateInteractionDto) {
     return this.statsService.trackInteraction(createInteractionDto);
   }

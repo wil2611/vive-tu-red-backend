@@ -28,6 +28,13 @@ export class SupportController {
     return this.supportService.findActive();
   }
 
+  @Get('admin/all')
+  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  async findAll() {
+    return this.supportService.findAll();
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.supportService.findActiveById(id);
@@ -40,13 +47,6 @@ export class SupportController {
   @Roles(UserRole.ADMIN, UserRole.EDITOR)
   async create(@Body() createSupportPathDto: CreateSupportPathDto) {
     return this.supportService.create(createSupportPathDto);
-  }
-
-  @Get('admin/all')
-  @UseGuards(JwtAuthGuard, CsrfGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.EDITOR)
-  async findAll() {
-    return this.supportService.findAll();
   }
 
   @Put(':id')
