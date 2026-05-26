@@ -14,6 +14,9 @@ export class TeamMember {
   @Column()
   name: string;
 
+  @Column({ default: 'Equipo investigador' })
+  roleLabel: string;
+
   @Column({ type: 'text' })
   profile: string;
 
