@@ -42,6 +42,9 @@ export class TeamService {
   async create(createTeamMemberDto: CreateTeamMemberDto): Promise<TeamMember> {
     const teamMember = this.teamMemberRepository.create({
       name: this.normalizeRequiredText(createTeamMemberDto.name, 'El nombre'),
+      roleLabel: createTeamMemberDto.roleLabel
+        ? this.normalizeRequiredText(createTeamMemberDto.roleLabel, 'El rol')
+        : 'Equipo investigador',
       profile: this.normalizeRequiredText(
         createTeamMemberDto.profile,
         'El perfil',
@@ -98,6 +101,13 @@ export class TeamService {
       teamMember.name = this.normalizeRequiredText(
         updateTeamMemberDto.name,
         'El nombre',
+      );
+    }
+
+    if (updateTeamMemberDto.roleLabel !== undefined) {
+      teamMember.roleLabel = this.normalizeRequiredText(
+        updateTeamMemberDto.roleLabel,
+        'El rol',
       );
     }
 

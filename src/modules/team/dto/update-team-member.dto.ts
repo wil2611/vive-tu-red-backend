@@ -14,6 +14,7 @@ import {
   TEAM_NAME_MAX_LENGTH,
   TEAM_PHOTO_MAX_LENGTH,
   TEAM_PROFILE_MAX_LENGTH,
+  TEAM_ROLE_LABEL_MAX_LENGTH,
 } from '../team.constants';
 
 const normalizeOptionalRequiredString = ({
@@ -39,6 +40,14 @@ export class UpdateTeamMemberDto {
   @MinLength(3)
   @MaxLength(TEAM_NAME_MAX_LENGTH)
   name?: string;
+
+  @IsString()
+  @IsOptional()
+  @Transform(normalizeOptionalRequiredString)
+  @IsNotEmpty()
+  @MinLength(3)
+  @MaxLength(TEAM_ROLE_LABEL_MAX_LENGTH)
+  roleLabel?: string;
 
   @IsString()
   @IsOptional()
