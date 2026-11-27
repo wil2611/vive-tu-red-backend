@@ -91,7 +91,9 @@ async function bootstrap() {
 
   const port = parseInt(configService.get<string>('PORT', '3000'), 10);
   const safePort = Number.isNaN(port) ? 3000 : port;
-  await app.listen(safePort);
+  const host = configService.get<string>('HOST');
+  if (host) await app.listen(safePort, host);
+  else await app.listen(safePort);
   console.log(`Servidor corriendo en http://localhost:${safePort}/api`);
 }
 void bootstrap();
